@@ -111,6 +111,45 @@ test('保留原始 AST，详情面板才能读到 available', () => {
   assert.strictEqual(available.length, 1);
 });
 
+console.log('\n共享国策');
+
+const sharedRaw = Clausewitz.extract(Clausewitz.parse(fixture('shared_focus.txt')));
+
+test('裸引用 shared_focus = X 被记录成 sharedRefs', () => {
+  const host = sharedRaw.find(t => t.id === 'host_tree');
+  assert.deepStrictEqual(host.sharedRefs, ['SH_base', 'SH_child']);
+  assert.strictEqual(host.focuses.length, 1, '引用不该被当成定义');
+});
+
+test('merge 后共享国策被搬进引用它的树', () => {
+  const merged = Clausewitz.merge(sharedRaw);
+  const host = merged.find(t => t.id === 'host_tree');
+  const ids = host.focuses.map(f => f.id).sort();
+  assert.deepStrictEqual(ids, ['H_own', 'SH_base', 'SH_child']);
+});
+
+test('搬进来的国策保留相对定位，前置也能解析', () => {
+  const merged = Clausewitz.merge(sharedRaw);
+  const host = merged.find(t => t.id === 'host_tree');
+  const child = host.focuses.find(f => f.id === 'SH_child');
+  const own = host.focuses.find(f => f.id === 'H_own');
+  assert.strictEqual(child.absX, -2);
+  assert.strictEqual(child.absY, 2);
+  const known = new Set(host.focuses.map(f => f.id));
+  for (const g of own.prereq) {
+    for (const p of g) assert.ok(known.has(p), '前置指向了不存在的 ' + p);
+  }
+});
+
+test('同一份共享国策在不同树里是独立对象', () => {
+  const merged = Clausewitz.merge(sharedRaw);
+  const host = merged.find(t => t.id === 'host_tree');
+  const pool = merged.find(t => t.id === '__shared__');
+  const a = host.focuses.find(f => f.id === 'SH_base');
+  const b = pool.focuses.find(f => f.id === 'SH_base');
+  assert.notStrictEqual(a, b, '共用对象会让两棵树的坐标互相覆盖');
+});
+
 console.log('\n格式化');
 
 test('formatLines 输出可读的缩进结构', () => {

@@ -1,0 +1,33 @@
+# 共享国策：仿 congo_shared.txt（顶层定义）+ belgium.txt（裸引用）的写法
+
+shared_focus = {
+	id = SH_base
+	icon = GFX_goal_generic_army
+	x = 0
+	y = 0
+	cost = 5
+}
+
+shared_focus = {
+	id = SH_child
+	icon = GFX_goal_generic_army
+	relative_position_id = SH_base
+	x = -2
+	y = 2
+	prerequisite = { focus = SH_base }
+}
+
+# 引用上面两个共享国策的树
+focus_tree = {
+	id = host_tree
+
+	shared_focus = SH_base
+	shared_focus = SH_child
+
+	focus = {
+		id = H_own
+		x = 3
+		y = 0
+		prerequisite = { focus = SH_child }
+	}
+}

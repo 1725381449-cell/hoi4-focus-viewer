@@ -97,13 +97,13 @@ node tools/export-svg.js <文件> --tree <树 id> --out out.svg
 - **图标是占位色块**。游戏用 `.dds`，浏览器读不了。想显示真图标，得先转成 PNG
 - **大树非常宽**。`belgium_focus` 画出来有 20000px 宽——这是游戏原始布局的宽度，不是 bug
 - **只读**。不能编辑、不能保存
-- **`shared_focus` 的引用关系**目前只按定义收集，没有做跨树解析
+- **共享国策只能静态还原一部分**。`shared_focus = X` 的导入已经支持，但原版还有 6 处前置指向了没被显式共享进该树的国策（`belgium_focus` 4 处、`congo_focus` 2 处）——这些是游戏用 `dynamic = yes` 在运行时按国家解析的，静态分析看不出结果
 
 ## 路线图
 
 - [ ] 读 `.gfx` 拿到图标清单，把色块换成真图标
 - [ ] 读 `localisation/*.yml`，把 id 换成游戏里的中文名
-- [ ] 树与树之间的 `shared_focus` 关联
+- [x] 树与树之间的 `shared_focus` 关联
 - [ ] 生成 PNG / 缩略图，方便贴进 PR
 - [ ] 做成 VS Code 扩展，在编辑器里直接看
 
