@@ -49,6 +49,7 @@
 - **按 x / y 直接画**：HOI4 的坐标本来就是作者手写的，换算一下就是最终位置
 - **区分边**：实线 = 前置，虚线 = 多组前置（满足其一），红色虚线 = 互斥
 - **详情面板**：成本、坐标、前置分组、互斥项，以及 `available` / `completion_reward` / `bypass` 的原始脚本
+- **显示真图标**：读 `interface/*.gfx` 建精灵索引，再把 `.dds` 解成 PNG 贴进图里；解不了就退回色块
 - **优先读 `national_focus`**：拖整个游戏目录进来时，先把几千个无关 `.txt` 挡掉
 
 ## 坐标系怎么处理
@@ -88,20 +89,24 @@ HOI4_PATH="C:/Program Files (x86)/Steam/steamapps/common/Hearts of Iron IV" \
 ```bash
 node tools/export-svg.js <文件或目录> --list          # 看看有哪些树
 node tools/export-svg.js <文件> --tree <树 id> --out out.svg
+
+# 带真图标（会把 .dds 解出来嵌进 SVG，文件是自包含的）
+node tools/export-svg.js <文件> --tree <树 id> --game "<游戏目录>" --out out.svg
 ```
 
-`docs/preview.svg` 就是这么生成的：`generic.txt` 里的 `generic_focus`，56 个国策。
+`docs/preview.svg` 就是这么生成的：`generic.txt` 里的 `generic_focus`，56 个国策、44 个图标。
 
 ## 已知限制
 
-- **图标是占位色块**。游戏用 `.dds`，浏览器读不了。想显示真图标，得先转成 PNG
+- **图标只支持未压缩的 32 位 DDS**。原版 2954 个图标里 2951 个是这种格式；DXT 压缩和 DX10 会退回色块
+- **图标要拖整个游戏目录才有**。只拖 mod 文件夹时 `gfx/` 里没有素材，显示的就是色块
 - **大树非常宽**。`belgium_focus` 画出来有 20000px 宽——这是游戏原始布局的宽度，不是 bug
 - **只读**。不能编辑、不能保存
 - **共享国策只能静态还原一部分**。`shared_focus = X` 的导入已经支持，但原版还有 6 处前置指向了没被显式共享进该树的国策（`belgium_focus` 4 处、`congo_focus` 2 处）——这些是游戏用 `dynamic = yes` 在运行时按国家解析的，静态分析看不出结果
 
 ## 路线图
 
-- [ ] 读 `.gfx` 拿到图标清单，把色块换成真图标
+- [x] 读 `.gfx` 拿到图标清单，把色块换成真图标
 - [ ] 读 `localisation/*.yml`，把 id 换成游戏里的中文名
 - [x] 树与树之间的 `shared_focus` 关联
 - [ ] 生成 PNG / 缩略图，方便贴进 PR
