@@ -413,6 +413,58 @@ test('humanDate 处理常见日期格式', () => {
   assert.strictEqual(Triggers.humanDate('不是日期'), '不是日期');
 });
 
+console.log('\n效果翻译');
+
+test('简单效果翻成中文', () => {
+  const block = blockOfScript('a = { add_political_power = 50 add_stability = 0.1 add_ideas = my_idea }');
+  const texts = Triggers.explainEffects(block).map(l => l.text);
+  assert.ok(texts.some(t => t === '政治点 50'), texts.join(' | '));
+  assert.ok(texts.some(t => t.indexOf('国家精神「my_idea」') !== -1));
+});
+
+test('if / limit / else 展开成条件-那么-否则', () => {
+  const block = blockOfScript('a = { if = { limit = { tag = YUG } add_claim_by = ROOT } else = { add_stability = 0.05 } }');
+  const texts = Triggers.explainEffects(block).map(l => l.text);
+
+  assert.strictEqual(texts[0], '如果：');
+  assert.ok(texts.indexOf('条件是：') > 0, '缺「条件是」');
+  assert.ok(texts.indexOf('那么：') > 0, '缺「那么」');
+  assert.ok(texts.indexOf('否则：') > 0, '缺「否则」');
+  assert.ok(texts.some(t => t.indexOf('获得宣称') !== -1));
+});
+
+test('every_state 这类作用域翻成「对每个州」', () => {
+  const block = blockOfScript('a = { every_state = { limit = { is_core_of = YUG } add_claim_by = ROOT } }');
+  const texts = Triggers.explainEffects(block).map(l => l.text);
+  assert.strictEqual(texts[0], '对每个州：');
+  assert.ok(texts.some(t => t.indexOf('核心领土') !== -1), texts.join(' | '));
+});
+
+test('事件 id 和延迟被提取出来', () => {
+  const block = blockOfScript('a = { country_event = { id = my.event days = 30 } }');
+  const lines = Triggers.explainEffects(block);
+  assert.strictEqual(lines[0].text, '触发事件 my.event（30 天后）');
+  assert.strictEqual(lines[0].ref.kind, 'event');
+});
+
+test('国家标签作用域翻成「对 X 执行」', () => {
+  const block = blockOfScript('a = { YUG = { country_event = my.event } }');
+  const texts = Triggers.explainEffects(block).map(l => l.text);
+  assert.strictEqual(texts[0], '对 YUG 执行：');
+});
+
+test('不认识的效果原样输出', () => {
+  const block = blockOfScript('a = { totally_unknown_effect = 1 }');
+  assert.strictEqual(Triggers.explainEffects(block)[0].text, 'totally_unknown_effect = 1');
+});
+
+test('tooltip 这类纯显示包装被跳过', () => {
+  const block = blockOfScript('a = { custom_effect_tooltip = blah add_stability = 0.1 }');
+  const texts = Triggers.explainEffects(block).map(l => l.text);
+  assert.ok(!texts.some(t => t.indexOf('custom_effect_tooltip') !== -1), '不该出现 tooltip');
+  assert.ok(texts.some(t => t.indexOf('稳定度') !== -1));
+});
+
 console.log('\n标记索引');
 
 const Flags = require('../lib/flags.js');

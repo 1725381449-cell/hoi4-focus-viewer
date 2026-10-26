@@ -73,7 +73,7 @@ HOI4 的国策不都是一棵树内部的。常见的两种：
 
 原版 1.19.3 实测：**6 个国策**有跨树关联（波罗的海三国、刚果 ↔ 比利时、荷属东印度），另有 **6 个 id** 静态找不到（`CONGO_*` 四个、`INSHOL_*` 两个）。后者大概率是 `dynamic = yes` 的共享国策，游戏运行时才按国家生成，静态分析看不见——这是限制，不是 bug。
 
-## 条件解读
+## 条件与效果解读
 
 国策的 `available` 常常长这样，对不熟脚本的人等于天书：
 
@@ -96,10 +96,32 @@ available = {
 
 最后那行是关键：**「这个标记什么时候被设的」在原文里完全看不出来**。工具会去 `events/` 里扫 `set_global_flag` / `set_country_flag` / `set_variable`，把设置它的那个事件 id 和文件找出来。
 
+`completion_reward`（完成效果）同样会翻。比如 `POL_demand_yugoslav_subjugation` 这段：
+
+```hoi4
+if = { limit = { YUG = { is_subject = no exists = yes has_capitulated = no } }
+       YUG = { country_event = NSB_poland_monarchist_events.6 } }
+else = { every_state = { limit = { is_core_of = YUG } add_claim_by = ROOT } }
+```
+
+翻出来是：
+
+```
+· 如果：
+  · 条件是：从 YUG 的角度看 → 不满足:是附庸国 / 存在 / 不满足:已投降
+  · 那么：对 YUG 执行 → 触发事件 NSB_poland_monarchist_events.6
+· 否则：
+  · 对每个州：
+    · 条件是：是 YUG 的核心领土
+    · 我方 获得宣称
+```
+
 几个设计上的取舍：
 
-- 词典只覆盖约 40 个最常见条件，**遇到不认识的原样输出**，绝不猜——看不懂比看错强
+- 词典只覆盖最常见的条件与效果，**遇到不认识的键原样输出**，绝不猜——看不懂比看错强
 - `is_ai = no` 这类会翻成「不满足：由 AI 控制」，不会翻反
+- `ROOT` / `FROM` / `PREV` 翻成「我方 / 对方 / 上一个对象」
+- `tooltip` / `custom_effect_tooltip` 是纯显示用的，跳过不显示
 - 标记索引是后台扫描，建好之前不显示来源，也不影响主流程
 
 ## 坐标系怎么处理

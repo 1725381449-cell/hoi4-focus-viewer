@@ -671,21 +671,17 @@
       '</pre></section>';
   }
 
-  /** 把条件块翻成中文短句，并标出引用来源 */
-  function conditionSection(focus, key, label) {
-    var block = blockOf(focus, key);
-    if (!block) return '';
-
-    var lines = Triggers.explain(block);
-    if (!lines.length) return '';
-
-    var html = ['<section class="detail-sec"><h4>' + escape(label) + ' · 人话版</h4><div class="trig">'];
+  /** 把翻译结果渲染成带缩进的列表 */
+  function renderExplained(lines, heading) {
+    var html = ['<section class="detail-sec"><h4>' + escape(heading) + '</h4><div class="trig">'];
 
     lines.forEach(function (line) {
       var extra = '';
 
       if (line.ref && line.ref.kind === 'focus') {
         extra = ' ' + chip(line.ref.value);
+      } else if (line.ref && line.ref.kind === 'event') {
+        extra = ' <span class="trig-src">（事件 ' + escape(line.ref.value) + '）</span>';
       } else if (line.ref) {
         var hits = Flags.lookup(state.flagIndex, line.ref.kind, line.ref.value);
         if (hits.length) {
@@ -703,6 +699,24 @@
 
     html.push('</div></section>');
     return html.join('');
+  }
+
+  /** 条件（available / bypass） */
+  function conditionSection(focus, key, label) {
+    var block = blockOf(focus, key);
+    if (!block) return '';
+    var lines = Triggers.explain(block);
+    if (!lines.length) return '';
+    return renderExplained(lines, label + ' · 人话版');
+  }
+
+  /** 效果（completion_reward） */
+  function effectSection(focus, key, label) {
+    var block = blockOf(focus, key);
+    if (!block) return '';
+    var lines = Triggers.explainEffects(block);
+    if (!lines.length) return '';
+    return renderExplained(lines, label + ' · 人话版');
   }
 
   function renderDetail(f) {
@@ -745,8 +759,9 @@
 
     html.push(conditionSection(f, 'available', '可用条件'));
     html.push(conditionSection(f, 'bypass', '跳过条件'));
+    html.push(effectSection(f, 'completion_reward', '完成效果'));
     html.push(preBlock(f, 'available', '可用条件 · 原始脚本'));
-    html.push(preBlock(f, 'completion_reward', '完成效果'));
+    html.push(preBlock(f, 'completion_reward', '完成效果 · 原始脚本'));
 
     el.detail.innerHTML = html.join('');
     el.detail.classList.add('open');
