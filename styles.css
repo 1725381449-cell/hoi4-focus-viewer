@@ -53,7 +53,8 @@ body.dragging #canvas::after {
 .dim { color: var(--dim); }
 
 .stats {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--dim);
   font-size: 13px;
   white-space: nowrap;
@@ -61,10 +62,10 @@ body.dragging #canvas::after {
   text-overflow: ellipsis;
 }
 
-.actions { display: flex; gap: 8px; align-items: center; }
+.actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
 
 input[type="search"] {
-  width: 200px;
+  width: 180px;
   padding: 7px 10px;
   border-radius: 6px;
   border: 1px solid var(--line);
@@ -73,6 +74,14 @@ input[type="search"] {
   outline: none;
 }
 input[type="search"]:focus { border-color: var(--accent-2); }
+
+/* 窗口窄的时候把不重要的东西收起来，别让按钮被挤出屏幕 */
+@media (max-width: 1180px) {
+  .brand .dim { display: none; }
+  .topbar { gap: 10px; }
+  .actions input[type="search"] { width: 120px; }
+  .actions button { padding: 7px 10px; }
+}
 
 button {
   padding: 7px 14px;
