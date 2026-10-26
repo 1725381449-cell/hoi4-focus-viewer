@@ -279,6 +279,9 @@ path[data-from].is-dim { opacity: .08; }
   font-size: 11px;
 }
 
+.ftv-node.is-hidden,
+path.is-hidden { display: none; }
+
 /* ---------- 详情面板 ---------- */
 
 #detail {
@@ -495,4 +498,76 @@ path[data-from].is-dim { opacity: .08; }
   color: #cfe0ff;
   font-family: Consolas, "Cascadia Mono", monospace;
 }
+
+/* ---------- 事件弹层 ---------- */
+
+.modal {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 9, 14, .72);
+  z-index: 50;
+  padding: 48px 24px;
+  overflow-y: auto;
+}
+.modal.open { display: block; }
+
+.modal-box {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .6);
+  padding: 18px 20px 22px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+#modal-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  word-break: break-all;
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
+.ev-meta {
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.ev-loc {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 12px;
+  color: #a9b8d0;
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+.ev-loc b { color: #7c8aa5; font-weight: 600; margin-right: 6px; }
+
+.ev-opt {
+  margin: 18px 0 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: #cfe0ff;
+  font-weight: 600;
+}
+
+.chip--event {
+  border-color: #35526b;
+  background: #16242f;
+  color: #93c8ee;
+}
+.chip--event:hover { border-color: #4e8cb8; color: #fff; background: #1d3242; }
 

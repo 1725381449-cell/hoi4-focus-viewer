@@ -443,8 +443,9 @@ test('every_state 这类作用域翻成「对每个州」', () => {
 test('事件 id 和延迟被提取出来', () => {
   const block = blockOfScript('a = { country_event = { id = my.event days = 30 } }');
   const lines = Triggers.explainEffects(block);
-  assert.strictEqual(lines[0].text, '触发事件 my.event（30 天后）');
+  assert.strictEqual(lines[0].text, '触发事件（30 天后）');
   assert.strictEqual(lines[0].ref.kind, 'event');
+  assert.strictEqual(lines[0].ref.value, 'my.event');
 });
 
 test('国家标签作用域翻成「对 X 执行」', () => {
@@ -591,6 +592,60 @@ test('清空把所有已点都清掉', () => {
   Sim.toggle(done, byId('T_left'), simXor, null);
   Sim.reset(done);
   assert.strictEqual(Sim.count(done), 0);
+});
+
+console.log('\n事件索引');
+
+const Events = require('../lib/events.js');
+
+test('按 id 索引事件，并保留来源文件', () => {
+  const ast = Clausewitz.parse('country_event = { id = mc.1 title = t }');
+  const idx = Events.indexAst(ast, 'events/mc.txt');
+  assert.ok(idx['mc.1'], '没索引到');
+  assert.strictEqual(idx['mc.1'].kind, 'country_event');
+  assert.strictEqual(idx['mc.1'].file, 'events/mc.txt');
+});
+
+test('选项拆得出来，name / ai_chance 不算效果', () => {
+  const ast = Clausewitz.parse(
+    'country_event = { id = mc.2 option = { name = o ai_chance = { factor = 1 } add_war_support = 0.2 } }'
+  );
+  const idx = Events.indexAst(ast, 'x.txt');
+  const opts = Events.options(idx['mc.2'].block);
+  assert.strictEqual(opts.length, 1);
+
+  const keys = Events.optionEffects(opts[0]).entries.map(e => e.k);
+  assert.ok(keys.indexOf('name') === -1, 'name 该被摘掉');
+  assert.ok(keys.indexOf('ai_chance') === -1, 'ai_chance 该被摘掉');
+  assert.ok(keys.indexOf('add_war_support') !== -1, '效果不该被摘掉');
+});
+
+test('没有 id 的块不算事件', () => {
+  const idx = Events.indexAst(Clausewitz.parse('country_event = { title = t }'), 'x.txt');
+  assert.deepStrictEqual(Object.keys(idx), []);
+});
+
+console.log('\n不可达国策');
+
+test('互斥分支连同它的后代一起变死', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+
+  let dead = Sim.unreachable(simTree, done, simXor);
+  assert.ok(!dead['T_right'], '还没选边的时候不该死');
+
+  Sim.toggle(done, byId('T_left'), simXor, null);
+  dead = Sim.unreachable(simTree, done, simXor);
+
+  assert.ok(dead['T_right'], 'T_right 被互斥 → 该死');
+  assert.ok(dead['T_rel'], 'T_rel 的唯一前置组含死人 → 也该死');
+  assert.ok(!dead['T_or'], 'T_or 还有 {T_left} 这组活着');
+  assert.ok(!dead['T_left'], '已点的不算死');
+});
+
+test('没有前置的国策永远活着', () => {
+  const dead = Sim.unreachable(simTree, { T_left: true }, simXor);
+  assert.ok(!dead['T_root'], '根不该死');
 });
 
 // ---------------- 真实游戏文件（可选） ----------------

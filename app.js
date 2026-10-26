@@ -57,7 +57,8 @@
     globalIds: {},     // 国策 id → 所在树 id（跨树跳转用）
     rel: null,         // 当前树的关系解析结果
     flagIndex: {},     // 标记/变量 → 设置点
-    txtFiles: [],      // 所有 .txt（后台建标记索引用）
+    events: {},        // 事件 id → 定义
+    txtFiles: [],      // 所有 .txt（后台建索引）
     completed: {},     // 已点的国策 id
     xorMap: {}         // 双向互斥表
   };
@@ -206,30 +207,36 @@
   }
 
   /**
-   * 后台扫事件和国策文件，建「标记 / 变量 → 设置点」索引。
-   * 条件里出现 has_global_flag = X 时，就能告诉用户 X 是谁设的。
+   * 后台扫事件和国策文件，一次建两种索引：
+   *   标记 / 变量 → 设置点（回答「谁设的」）
+   *   事件 id     → 定义（回答「触发的是什么事件」）
    * 扫不到不报错，界面上只是不显示来源。
    */
   function buildFlagIndex() {
     var targets = state.txtFiles.filter(function (f) {
       var p = f._relPath || '';
-      return p.indexOf('events/') !== -1 || p.indexOf('national_focus') !== -1;
+      return /(^|\/)events\//.test(p) || p.indexOf('national_focus') !== -1;
     }).slice(0, 1200);
 
     if (!targets.length) return;
 
-    var index = {};
+    var flags = {};
+    var events = {};
     var i = 0;
 
     function next() {
       if (i >= targets.length) {
-        state.flagIndex = index;
+        state.flagIndex = flags;
+        state.events = events;
         return;
       }
       var file = targets[i++];
       file.text().then(function (text) {
         try {
-          Flags.indexAst(Clausewitz.parse(text), file._relPath || file.name, index);
+          var ast = Clausewitz.parse(text);
+          var rel = file._relPath || file.name;
+          Flags.indexAst(ast, rel, flags);
+          Events.indexAst(ast, rel, events);
         } catch (e) { /* 坏文件跳过 */ }
         next();
       }, function () { next(); });
@@ -650,18 +657,30 @@
   function applyCompletion() {
     if (!state.current) return;
 
+    // 永远点不了的（被互斥挡掉，或所有前置都已死）直接隐藏，图会干净很多
+    var dead = Sim.unreachable(state.current, state.completed, state.xorMap);
     var nodes = el.stage.querySelectorAll('.ftv-node');
-    for (var i = 0; i < nodes.length; i++) {
+    var i;
+
+    for (i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       var f = focusById(node.dataset.focusId);
       if (!f) continue;
 
       var st = Sim.evaluate(f, state.completed, state.xorMap, state.globalIds).state;
       node.classList.toggle('is-done', st === 'done');
-      node.classList.toggle('is-excluded', st === 'excluded');
       node.classList.toggle('is-avail', st === 'avail');
       node.classList.toggle('is-locked', st === 'locked');
       node.classList.toggle('is-unknown', st === 'unknown');
+      node.classList.toggle('is-hidden', !!dead[f.id]);
+    }
+
+    // 连到隐藏节点的线也一起藏，否则会留一堆悬空的线头
+    var paths = el.stage.querySelectorAll('path[data-from]');
+    for (i = 0; i < paths.length; i++) {
+      var from = paths[i].getAttribute('data-from');
+      var to = paths[i].getAttribute('data-to');
+      paths[i].classList.toggle('is-hidden', !!dead[from] || !!dead[to]);
     }
   }
 
@@ -720,7 +739,8 @@
       if (line.ref && line.ref.kind === 'focus') {
         extra = ' ' + chip(line.ref.value);
       } else if (line.ref && line.ref.kind === 'event') {
-        extra = ' <span class="trig-src">（事件 ' + escape(line.ref.value) + '）</span>';
+        extra = ' <button class="chip chip--event" data-event="' + escape(line.ref.value) +
+          '" title="点开看这个事件">' + escape(line.ref.value) + '</button>';
       } else if (line.ref) {
         var hits = Flags.lookup(state.flagIndex, line.ref.kind, line.ref.value);
         if (hits.length) {
@@ -852,6 +872,70 @@
         jumpTo(treeId, id);
       });
     }
+  }
+
+  // ---------------- 事件面板 ----------------
+
+  function showModal(title, html) {
+    var modal = document.getElementById('modal');
+    if (!modal) return;
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = html;
+    modal.classList.add('open');
+  }
+
+  function closeModal() {
+    var modal = document.getElementById('modal');
+    if (modal) modal.classList.remove('open');
+  }
+
+  function openEvent(id) {
+    var ev = state.events[id];
+
+    if (!ev) {
+      showModal(id, '<p class="dim">没找到这个事件的定义。' +
+        '可能是它所在的文件没被扫到，或者 id 写错了。</p>');
+      return;
+    }
+
+    var b = ev.block;
+    var html = [];
+
+    html.push('<div class="ev-meta">' + escape(ev.kind) + ' · ' + escape(ev.file) + '</div>');
+
+    var title = Clausewitz._atom(b, 'title');
+    var desc = Clausewitz._atom(b, 'desc');
+    if (title) html.push('<div class="ev-loc"><b>标题 key</b> ' + escape(title) + '</div>');
+    if (desc) html.push('<div class="ev-loc"><b>描述 key</b> ' + escape(desc) + '</div>');
+
+    var flags = [];
+    ['is_triggered_only', 'fire_only_once', 'hidden', 'major', 'minor'].forEach(function (k) {
+      var v = Clausewitz._atom(b, k);
+      if (v) flags.push(k + ' = ' + v);
+    });
+    if (flags.length) html.push('<div class="ev-loc dim">' + escape(flags.join('    ')) + '</div>');
+
+    var trig = Clausewitz._children(b, 'trigger')[0];
+    if (trig) html.push(renderExplained(Triggers.explain(trig), '触发条件 · 人话版'));
+
+    var imm = Clausewitz._children(b, 'immediate')[0];
+    if (imm) html.push(renderExplained(Triggers.explainEffects(imm), '立即效果 · 人话版'));
+
+    var opts = Events.options(b);
+    if (!opts.length) {
+      html.push('<p class="dim">这个事件没有选项。</p>');
+    } else {
+      opts.forEach(function (o, i) {
+        var name = Clausewitz._atom(o, 'name') || ('未命名');
+        html.push('<div class="ev-opt">选项 ' + (i + 1) + '：' + escape(name) + '</div>');
+        var eff = Events.optionEffects(o);
+        if (eff.entries.length) {
+          html.push(renderExplained(Triggers.explainEffects(eff), '选项效果 · 人话版'));
+        }
+      });
+    }
+
+    showModal(id, html.join(''));
   }
 
   function showDetail(id) {
@@ -1030,8 +1114,24 @@
   });
 
   window.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') { clearSelection(); closeDetail(); }
+    if (e.key === 'Escape') { closeModal(); clearSelection(); closeDetail(); }
   });
+
+  // 事件芯片：详情面板和弹层里都可能出现，统一在 document 上代理
+  document.addEventListener('click', function (e) {
+    var target = e.target.closest && e.target.closest('[data-event]');
+    if (target) {
+      e.preventDefault();
+      openEvent(target.getAttribute('data-event'));
+      return;
+    }
+
+    var modal = document.getElementById('modal');
+    if (modal && e.target === modal) closeModal();
+  });
+
+  var modalClose = document.getElementById('modal-close');
+  if (modalClose) modalClose.addEventListener('click', closeModal);
 
   ['dragenter', 'dragover'].forEach(function (type) {
     window.addEventListener(type, function (e) {
