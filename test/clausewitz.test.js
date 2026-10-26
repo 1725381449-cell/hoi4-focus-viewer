@@ -104,6 +104,38 @@ test('第二个树只有一个国策', () => {
   assert.strictEqual(trees[1].focuses[0].id, 'S_only');
 });
 
+test('保留原始 AST，详情面板才能读到 available', () => {
+  const left = trees[0].focuses.find(f => f.id === 'T_left');
+  assert.ok(left.raw, '没有 raw');
+  const available = Clausewitz._children(left.raw, 'available');
+  assert.strictEqual(available.length, 1);
+});
+
+console.log('\n格式化');
+
+test('formatLines 输出可读的缩进结构', () => {
+  const left = trees[0].focuses.find(f => f.id === 'T_left');
+  const block = Clausewitz._children(left.raw, 'completion_reward')[0];
+  const lines = Clausewitz.formatLines(block);
+  assert.ok(lines.length >= 4, '行数偏少：' + lines.length);
+  assert.strictEqual(lines[0].trim(), 'if = {');
+  assert.ok(lines.some(l => l.includes('limit = {')), '缺 limit');
+  assert.ok(lines[lines.length - 1].trim() === '}', '结尾不是右括号');
+});
+
+test('formatLines 处理空块和裸值列表', () => {
+  const root = trees[0].focuses.find(f => f.id === 'T_root');
+  const pre = Clausewitz._children(root.raw, 'prerequisite')[0];
+  assert.deepStrictEqual(Clausewitz.formatLines(pre), []);
+});
+
+test('formatLines 保留嵌套层级', () => {
+  const ast = Clausewitz.parse('a = { b = { c = 1 } }');
+  // 传进去的是块本身，输出的是它的内容，所以从 0 缩进开始
+  const lines = Clausewitz.formatLines(ast.entries[0].v);
+  assert.deepStrictEqual(lines, ['b = {', '  c = 1', '}']);
+});
+
 console.log('\n渲染');
 
 const FocusRender = require('../lib/render.js');
@@ -119,6 +151,47 @@ test('生成的 SVG 包含每个节点和每条连线', () => {
   const edges = (svg.match(/<path /g) || []).length;
   assert.ok(edges >= 7, '连线数量偏少：' + edges);
 });
+
+// 回归测试：连线和节点曾经用了不同坐标系，整张图会错位
+function checkAlignment(svg) {
+  const boxes = {};
+  const nodeRe = /<g class="ftv-node" data-focus-id="([^"]+)"[\s\S]*?<rect x="([-\d.]+)" y="([-\d.]+)"/g;
+  let m;
+  while ((m = nodeRe.exec(svg))) {
+    boxes[m[1]] = { x: parseFloat(m[2]), y: parseFloat(m[3]) };
+  }
+  assert.ok(Object.keys(boxes).length > 0, '没解析到节点坐标');
+
+  const NODE_W = FocusRender.DEFAULTS.nodeW;
+  const NODE_H = FocusRender.DEFAULTS.nodeH;
+
+  let checked = 0;
+  const pathRe = /<path d="M ([\d.-]+) ([\d.-]+)[^>]*?data-from="([^"]+)" data-to="([^"]+)"/g;
+  while ((m = pathRe.exec(svg))) {
+    const x1 = parseFloat(m[1]);
+    const y1 = parseFloat(m[2]);
+    const from = boxes[m[3]];
+    const to = boxes[m[4]];
+    assert.ok(from, '找不到起点节点 ' + m[3]);
+    assert.ok(to, '找不到终点节点 ' + m[4]);
+
+    const cx = from.x + NODE_W / 2;
+    assert.ok(Math.abs(x1 - cx) < 1.5, `连线起点 x=${x1} 与节点中心 ${cx} 不符（${m[3]}）`);
+
+    const bottom = from.y + NODE_H;
+    assert.ok(y1 >= from.y - 1.5 && y1 <= bottom + 1.5,
+      `连线起点 y=${y1} 不在节点 ${m[3]} 的纵向范围内`);
+    checked++;
+  }
+  return checked;
+}
+
+test('连线端点必须落在节点边框上', () => {
+  const svg = FocusRender.toSVG(trees[0], { title: 'test_tree' });
+  const checked = checkAlignment(svg);
+  assert.ok(checked >= 7, '检查到的连线太少：' + checked);
+});
+
 
 test('空树不崩', () => {
   const svg = FocusRender.toSVG({ id: 'empty', focuses: [] });
@@ -169,10 +242,12 @@ if (HOI4_PATH) {
       }
     });
 
-    test('最大的树能渲染成 SVG', () => {
+    test('最大的树能渲染成 SVG，且连线全部对齐', () => {
       const big = allTrees.slice().sort((a, b) => b.focuses.length - a.focuses.length)[0];
       const svg = FocusRender.toSVG(big, { title: big.id });
       assert.ok(svg.length > 1000);
+      const checked = checkAlignment(svg);
+      assert.ok(checked > 100, '大树上只检查到 ' + checked + ' 条连线');
     });
 
     console.log('    文件 ' + files.length + ' 个，国策 ' + focusCount + ' 个，耗时 ' + elapsed + ' ms');
