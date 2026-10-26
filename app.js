@@ -21,7 +21,9 @@
     spriteIndex: {},   // 精灵名 → 纹理路径
     ddsFiles: {},      // 纹理路径 → File（惰性读取）
     iconCache: {},     // 精灵名 → data URL（或 null）
-    iconStats: { total: 0, hit: 0 }
+    iconStats: { total: 0, hit: 0 },
+    globalIds: {},     // 国策 id → 所在树 id（跨树跳转用）
+    rel: null          // 当前树的关系解析结果
   };
 
   var el = {
@@ -34,7 +36,8 @@
     fileInput: document.getElementById('file-input'),
     btnReset: document.getElementById('btn-reset'),
     btnExport: document.getElementById('btn-export'),
-    detail: document.getElementById('detail')
+    detail: document.getElementById('detail'),
+    searchResults: document.getElementById('search-results')
   };
 
   function escape(s) {
@@ -285,6 +288,7 @@
         return;
       }
 
+      state.globalIds = Clausewitz.globalIndex(state.trees);
       el.empty.style.display = 'none';
       renderSidebar();
       selectTree(state.trees[0].id);
@@ -308,7 +312,61 @@
     });
   }
 
-  function selectTree(id) {
+  /**
+   * 解析当前树里的引用关系：
+   *   local    本树内，正常画线
+   *   cross    指向别的树（阵营国策、共享国策），要能跳过去
+   *   missing  哪都找不到，属于数据问题，要提示出来
+   */
+  function computeRelations(tree) {
+    var local = Object.create(null);
+    for (var i = 0; i < tree.focuses.length; i++) local[tree.focuses[i].id] = true;
+
+    var cross = Object.create(null);      // 源国策 id → true（这个国策有跨树关联）
+    var external = Object.create(null);   // 外部 id → 'cross' | 'missing'
+
+    function note(sourceId, targetId) {
+      if (local[targetId]) return;
+      cross[sourceId] = true;
+      external[targetId] = state.globalIds[targetId] ? 'cross' : 'missing';
+    }
+
+    for (var j = 0; j < tree.focuses.length; j++) {
+      var f = tree.focuses[j];
+      for (var g = 0; g < f.prereq.length; g++) {
+        for (var k = 0; k < f.prereq[g].length; k++) note(f.id, f.prereq[g][k]);
+      }
+      for (var x = 0; x < f.xor.length; x++) note(f.id, f.xor[x]);
+    }
+
+    return { local: local, cross: cross, external: external };
+  }
+
+  function resolveRef(id) {
+    if (!state.rel) return { kind: 'local' };
+    if (state.rel.local[id]) return { kind: 'local' };
+    var treeId = state.globalIds[id];
+    if (treeId) return { kind: 'cross', tree: treeId };
+    return { kind: 'missing' };
+  }
+
+  /** 跳到某棵树里的某个国策；同树就直接定位，跨树就先切树 */
+  function jumpTo(treeId, focusId) {
+    if (!treeId || !focusId) return;
+
+    if (state.current && state.current.id === treeId) {
+      if (!focusById(focusId)) return;
+      state.selected = focusId;
+      highlight(relatedIds(focusId));
+      showDetail(focusId);
+      centerOn(focusId);
+      return;
+    }
+
+    selectTree(treeId, focusId);
+  }
+
+  function selectTree(id, focusId) {
     var tree = null;
     for (var i = 0; i < state.trees.length; i++) {
       if (state.trees[i].id === id) { tree = state.trees[i]; break; }
@@ -319,23 +377,38 @@
     state.selected = null;
     state.searchHits = [];
     state.view = { x: 0, y: 0, k: 1 };
+    state.rel = computeRelations(tree);
     renderSidebar();
     closeDetail();
     el.search.value = '';
+    renderSearchResults('');
     el.stats.textContent = '准备图标…';
 
     prepareIcons(tree).then(function (icons) {
       if (state.current !== tree) return;
 
-      el.stage.innerHTML = FocusRender.toSVG(tree, { title: tree.id, icons: icons });
-      applyView();
+      el.stage.innerHTML = FocusRender.toSVG(tree, {
+        title: tree.id,
+        icons: icons,
+        crossIds: state.rel.cross
+      });
       bindNodes();
+      applyView();
+
+      if (focusId && focusById(focusId)) {
+        state.selected = focusId;
+        highlight(relatedIds(focusId));
+        showDetail(focusId);
+        centerOn(focusId);
+      }
 
       var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
       var iconNote = state.iconStats.hit
         ? ' · 图标 ' + state.iconStats.hit + '/' + state.iconStats.total
         : '';
-      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策' + iconNote;
+      var crossCount = Object.keys(state.rel.cross).length;
+      var crossNote = crossCount ? ' · 跨树关联 ' + crossCount : '';
+      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策' + iconNote + crossNote;
     });
   }
 
@@ -450,6 +523,19 @@
   }
 
   function chip(id) {
+    var r = resolveRef(id);
+
+    if (r.kind === 'cross') {
+      return '<button class="chip chip--cross" data-goto="' + escape(id) +
+        '" data-tree="' + escape(r.tree) + '" title="在 ' + escape(r.tree) + ' 里，点击跳过去">' +
+        escape(id) + '<span class="chip-tree">' + escape(r.tree) + '</span></button>';
+    }
+
+    if (r.kind === 'missing') {
+      return '<span class="chip chip--missing" title="静态读取时找不到这个国策：可能是 dynamic 共享国策（游戏运行时才按国家生成），也可能是拼写问题">' +
+        escape(id) + '</span>';
+    }
+
     return '<button class="chip" data-goto="' + escape(id) + '">' + escape(id) + '</button>';
   }
 
@@ -525,11 +611,8 @@
     for (var i = 0; i < chips.length; i++) {
       chips[i].addEventListener('click', function () {
         var id = this.getAttribute('data-goto');
-        if (!focusById(id)) return;
-        state.selected = id;
-        highlight(relatedIds(id));
-        showDetail(id);
-        centerOn(id);
+        var treeId = this.getAttribute('data-tree') || (state.current && state.current.id);
+        jumpTo(treeId, id);
       });
     }
   }
@@ -542,10 +625,58 @@
 
   // ---------------- 搜索 ----------------
 
+  /** 搜索框下方列出「其他树里的匹配」，点一下就跳过去 */
+  function renderSearchResults(q) {
+    if (!el.searchResults) return;
+
+    if (!q || !state.trees.length) {
+      el.searchResults.innerHTML = '';
+      el.searchResults.classList.remove('open');
+      return;
+    }
+
+    var rows = [];
+    for (var i = 0; i < state.trees.length && rows.length < 12; i++) {
+      var t = state.trees[i];
+      if (state.current && t.id === state.current.id) continue;  // 当前树的已经高亮了
+      for (var j = 0; j < t.focuses.length; j++) {
+        if (t.focuses[j].id.toLowerCase().indexOf(q) === -1) continue;
+        rows.push({ tree: t.id, id: t.focuses[j].id });
+        if (rows.length >= 12) break;
+      }
+    }
+
+    if (!rows.length) {
+      el.searchResults.innerHTML = '';
+      el.searchResults.classList.remove('open');
+      return;
+    }
+
+    var html = ['<div class="sr-title">其他树里的匹配</div>'];
+    rows.forEach(function (r) {
+      html.push('<button class="sr-item" data-tree="' + escape(r.tree) + '" data-goto="' + escape(r.id) + '">' +
+        '<span class="sr-tree">' + escape(r.tree) + '</span>' +
+        '<span class="sr-id">' + escape(r.id) + '</span></button>');
+    });
+
+    el.searchResults.innerHTML = html.join('');
+    el.searchResults.classList.add('open');
+
+    var items = el.searchResults.querySelectorAll('.sr-item');
+    for (var k = 0; k < items.length; k++) {
+      items[k].addEventListener('click', function () {
+        jumpTo(this.getAttribute('data-tree'), this.getAttribute('data-goto'));
+      });
+    }
+  }
+
   function runSearch(q) {
-    q = q.trim().toLowerCase();
+    var raw = q.trim();
+    q = raw.toLowerCase();
     state.searchHits = [];
     if (!state.current) return;
+
+    renderSearchResults(q);
 
     if (!q) { clearSelection(); return; }
 

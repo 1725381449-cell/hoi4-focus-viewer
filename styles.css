@@ -37,6 +37,7 @@ body.dragging #canvas::after {
 /* ---------- 顶栏 ---------- */
 
 .topbar {
+  position: relative;
   height: 52px;
   display: flex;
   align-items: center;
@@ -329,5 +330,82 @@ path[data-from].is-dim { opacity: .08; }
   color: #b6c6de;
   white-space: pre;
   overflow-x: auto;
+}
+
+/* ---------- 跨树关联 ---------- */
+
+.chip--cross {
+  border-color: #5b3f8f;
+  background: #241a38;
+  color: #d3b8ff;
+}
+.chip--cross:hover { border-color: #a96bff; color: #fff; background: #33244d; }
+
+.chip-tree {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  border-radius: 3px;
+  background: rgba(169, 107, 255, .18);
+  color: #b895ff;
+  vertical-align: 1px;
+}
+
+.chip--missing {
+  border-color: #6b2f2f;
+  background: #2a1717;
+  color: #e08f8f;
+  cursor: help;
+  text-decoration: line-through;
+}
+
+/* ---------- 全局搜索结果 ---------- */
+
+.search-results {
+  display: none;
+  position: absolute;
+  right: 16px;
+  top: 50px;
+  width: 420px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .55);
+  z-index: 30;
+  padding: 8px;
+}
+.search-results.open { display: block; }
+
+.sr-title {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  color: var(--dim);
+  padding: 4px 8px 8px;
+  text-transform: uppercase;
+}
+
+.sr-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.sr-item:hover { background: #223049; }
+
+.sr-tree { font-size: 11px; color: #8b9ab5; }
+.sr-id {
+  font-size: 12.5px;
+  color: #cfe0ff;
+  font-family: Consolas, "Cascadia Mono", monospace;
 }
 

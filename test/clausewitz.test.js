@@ -150,6 +150,21 @@ test('同一份共享国策在不同树里是独立对象', () => {
   assert.notStrictEqual(a, b, '共用对象会让两棵树的坐标互相覆盖');
 });
 
+console.log('\n全局索引');
+
+test('globalIndex 把 id 映射到所在树，用来区分跨树和悬空', () => {
+  const merged = Clausewitz.merge(
+    Clausewitz.extract(Clausewitz.parse(fixture('sample_focus.txt')))
+      .concat(Clausewitz.extract(Clausewitz.parse(fixture('shared_focus.txt'))))
+  );
+  const idx = Clausewitz.globalIndex(merged);
+
+  assert.strictEqual(idx['T_root'], 'test_tree');
+  assert.strictEqual(idx['S_only'], 'second_tree');
+  assert.strictEqual(idx['SH_base'], 'host_tree', '共享国策归属最先出现的那棵树');
+  assert.strictEqual(idx['NOT_THERE'], undefined, '不存在的 id 应为 undefined');
+});
+
 console.log('\n格式化');
 
 test('formatLines 输出可读的缩进结构', () => {
