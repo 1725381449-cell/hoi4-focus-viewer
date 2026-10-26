@@ -214,6 +214,71 @@ main {
 path[data-from] { transition: opacity .12s ease; }
 path[data-from].is-dim { opacity: .08; }
 
+/* ---------- 模拟点选 ---------- */
+
+.ftv-node.is-done rect:first-of-type {
+  stroke: #4ea35a;
+  stroke-width: 3.5;
+}
+
+.ftv-node.is-avail rect:first-of-type {
+  stroke: #c9a227;
+}
+
+.ftv-node.is-excluded { opacity: .22; }
+
+.ftv-node.is-locked { opacity: .55; }
+
+.ftv-node.is-unknown rect:first-of-type {
+  stroke: #c9a227;
+  stroke-dasharray: 5 4;
+}
+
+.ftv-node.is-excluded.is-related,
+.ftv-node.is-locked.is-related { opacity: 1; }
+
+.btn-done {
+  display: block;
+  width: 100%;
+  padding: 9px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid #3d5a3f;
+  background: #1d2b1f;
+  color: #a8d5ae;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn-done:hover:not(:disabled) { border-color: #4ea35a; }
+.btn-done.done {
+  border-color: #4ea35a;
+  background: #24402a;
+  color: #c9f0cf;
+  font-weight: 600;
+}
+.btn-done.warn {
+  border-color: #6b5a2f;
+  background: #2b2617;
+  color: #ddc48a;
+}
+.btn-done:disabled {
+  border-color: var(--line);
+  background: #171d26;
+  color: #62708a;
+  cursor: not-allowed;
+}
+
+.done-hint {
+  font-size: 11.5px;
+  color: var(--dim);
+  margin: 0 0 10px;
+  line-height: 1.9;
+}
+.done-hint .chip {
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
 /* ---------- 详情面板 ---------- */
 
 #detail {

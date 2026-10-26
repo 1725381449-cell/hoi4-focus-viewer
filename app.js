@@ -57,7 +57,9 @@
     globalIds: {},     // 国策 id → 所在树 id（跨树跳转用）
     rel: null,         // 当前树的关系解析结果
     flagIndex: {},     // 标记/变量 → 设置点
-    txtFiles: []       // 所有 .txt（后台建标记索引用）
+    txtFiles: [],      // 所有 .txt（后台建标记索引用）
+    completed: {},     // 已点的国策 id
+    xorMap: {}         // 双向互斥表
   };
 
   var el = {
@@ -70,6 +72,7 @@
     fileInput: document.getElementById('file-input'),
     btnReset: document.getElementById('btn-reset'),
     btnExport: document.getElementById('btn-export'),
+    btnClearDone: document.getElementById('btn-clear-done'),
     detail: document.getElementById('detail'),
     searchResults: document.getElementById('search-results')
   };
@@ -361,6 +364,7 @@
       }
 
       state.globalIds = Clausewitz.globalIndex(state.trees);
+      state.xorMap = Sim.buildXorMap(state.trees);
       state.txtFiles = rawFiles;
       el.empty.style.display = 'none';
       renderSidebar();
@@ -468,6 +472,7 @@
       });
       bindNodes();
       applyView();
+      applyCompletion();
 
       if (focusId && focusById(focusId)) {
         state.selected = focusId;
@@ -485,6 +490,9 @@
 
     var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
     var parts = [state.trees.length + ' 棵树', total + ' 个国策'];
+
+    var doneCount = Sim.count(state.completed);
+    if (doneCount) parts.push('已点 ' + doneCount);
 
     if (state.iconStats.hit) {
       parts.push('图标 ' + state.iconStats.hit + '/' + state.iconStats.total);
@@ -513,6 +521,7 @@
         crossIds: state.rel ? state.rel.cross : null
       });
       bindNodes();
+      applyCompletion();
 
       if (keep && focusById(keep)) {
         state.selected = keep;
@@ -549,6 +558,17 @@
         var id = this.dataset.focusId;
         toggleSelection(id);
         showDetail(id);
+      });
+
+      // 双击直接勾选/取消，省得每次都要点右边的按钮
+      nodes[i].addEventListener('dblclick', function (e) {
+        e.stopPropagation();
+        var f = focusById(this.dataset.focusId);
+        if (!f) return;
+        if (!Sim.toggle(state.completed, f, state.xorMap, state.globalIds).ok) return;
+        applyCompletion();
+        showDetail(f.id);
+        updateStats();
       });
     }
   }
@@ -623,6 +643,25 @@
     for (var p = 0; p < paths.length; p++) {
       var lit = ids[paths[p].getAttribute('data-from')] && ids[paths[p].getAttribute('data-to')];
       paths[p].classList.toggle('is-dim', !lit);
+    }
+  }
+
+  /** 按「已点 + 前置 + 互斥」重新打状态，只改 class，不重画 SVG */
+  function applyCompletion() {
+    if (!state.current) return;
+
+    var nodes = el.stage.querySelectorAll('.ftv-node');
+    for (var i = 0; i < nodes.length; i++) {
+      var node = nodes[i];
+      var f = focusById(node.dataset.focusId);
+      if (!f) continue;
+
+      var st = Sim.evaluate(f, state.completed, state.xorMap, state.globalIds).state;
+      node.classList.toggle('is-done', st === 'done');
+      node.classList.toggle('is-excluded', st === 'excluded');
+      node.classList.toggle('is-avail', st === 'avail');
+      node.classList.toggle('is-locked', st === 'locked');
+      node.classList.toggle('is-unknown', st === 'unknown');
     }
   }
 
@@ -727,6 +766,31 @@
     html.push('<button class="icon-btn" id="detail-close" title="关闭">×</button>');
     html.push('</div>');
 
+    var check = Sim.evaluate(f, state.completed, state.xorMap, state.globalIds);
+    var label, cls = '', disabled = '';
+
+    if (check.state === 'done') {
+      label = '✓ 已点（再点取消）';
+      cls = ' done';
+    } else if (check.canClick) {
+      label = check.state === 'unknown' ? '强制标记为已点（前置无法判定）' : '标记为已点';
+      if (check.state === 'unknown') cls = ' warn';
+    } else {
+      label = check.reason + '，点不了';
+      disabled = ' disabled';
+    }
+
+    html.push('<button id="toggle-done" class="btn-done' + cls + '"' + disabled + '>' +
+      escape(label) + '</button>');
+
+    if (check.missing && check.missing.length) {
+      html.push('<div class="done-hint">还缺前置：' + check.missing.slice(0, 8).map(chip).join(' ') + '</div>');
+    }
+    if (check.unknown && check.unknown.length) {
+      html.push('<div class="done-hint">无法静态判定：' +
+        check.unknown.slice(0, 6).map(escape).join('、') + '</div>');
+    }
+
     var iconUrl = state.iconCache[f.icon];
     if (iconUrl) {
       html.push('<img class="detail-thumb" src="' + iconUrl + '" alt="">');
@@ -768,6 +832,17 @@
 
     var close = document.getElementById('detail-close');
     if (close) close.addEventListener('click', function () { closeDetail(); clearSelection(); });
+
+    var doneBtn = document.getElementById('toggle-done');
+    if (doneBtn && !doneBtn.disabled) {
+      doneBtn.addEventListener('click', function () {
+        var result = Sim.toggle(state.completed, f, state.xorMap, state.globalIds);
+        if (!result.ok) return;
+        applyCompletion();
+        renderDetail(f);
+        updateStats();
+      });
+    }
 
     var chips = el.detail.querySelectorAll('[data-goto]');
     for (var i = 0; i < chips.length; i++) {
@@ -931,6 +1006,13 @@
   el.search.addEventListener('input', function () { runSearch(el.search.value); });
   el.search.addEventListener('keydown', function (e) {
     if (e.key === 'Enter') jumpToFirstHit();
+  });
+
+  el.btnClearDone.addEventListener('click', function () {
+    Sim.reset(state.completed);
+    applyCompletion();
+    if (state.selected) showDetail(state.selected);
+    updateStats();
   });
 
   el.btnReset.addEventListener('click', function () {

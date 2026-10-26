@@ -493,6 +493,106 @@ test('没设置过的标记返回空数组', () => {
   assert.deepStrictEqual(Flags.lookup(idx, 'global', 'nope'), []);
 });
 
+// ---------------- 模拟点选 ----------------
+
+console.log('\n模拟点选');
+
+const Sim = require('../lib/sim.js');
+
+const simTrees = Clausewitz.extract(Clausewitz.parse(fixture('sample_focus.txt')));
+const simXor = Sim.buildXorMap(simTrees);
+const simTree = simTrees[0];
+
+function byId(id) {
+  return simTree.focuses.find(f => f.id === id);
+}
+
+function stateOf(id, done) {
+  return Sim.evaluate(byId(id), done, simXor, null).state;
+}
+
+test('互斥表是双向的', () => {
+  // fixture 里只有 T_left 写了 mutually_exclusive = T_right
+  assert.ok(simXor['T_left']['T_right'], 'T_left → T_right');
+  assert.ok(simXor['T_right']['T_left'], '反方向也要有');
+});
+
+test('初始：无前置的可点，有前置的被锁', () => {
+  const done = {};
+  assert.strictEqual(stateOf('T_root', done), 'avail');
+  assert.strictEqual(stateOf('T_left', done), 'locked', 'T_left 需要 T_root');
+  assert.strictEqual(stateOf('T_or', done), 'locked');
+});
+
+test('点了前置，后代才解锁', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  assert.strictEqual(stateOf('T_left', done), 'avail');
+  assert.strictEqual(stateOf('T_right', done), 'avail');
+  assert.strictEqual(stateOf('T_rel', done), 'locked', 'T_rel 要左右两个都点');
+});
+
+test('锁着的国策点不了，并给出原因', () => {
+  const done = {};
+  const r = Sim.toggle(done, byId('T_or'), simXor, null);
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.reason.indexOf('前置') !== -1, r.reason);
+  assert.strictEqual(Sim.count(done), 0, '失败的点击不该改变状态');
+});
+
+test('点了互斥项，另一方被排除且点不了', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  Sim.toggle(done, byId('T_left'), simXor, null);
+
+  assert.strictEqual(stateOf('T_right', done), 'excluded');
+  const r = Sim.toggle(done, byId('T_right'), simXor, null);
+  assert.strictEqual(r.ok, false);
+  assert.ok(r.reason.indexOf('互斥') !== -1, r.reason);
+});
+
+test('互斥的两个都要点的国策，永远点不了', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  Sim.toggle(done, byId('T_left'), simXor, null);
+  // T_rel 需要 T_left 和 T_right 同时完成，但二者互斥 → 死锁
+  assert.strictEqual(stateOf('T_rel', done), 'locked');
+});
+
+test('多组前置满足其一时就解锁', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  Sim.toggle(done, byId('T_left'), simXor, null);
+  assert.strictEqual(stateOf('T_or', done), 'avail', 'T_or 有两组前置，满足一组即可');
+});
+
+test('判定不了的前置标成 unknown，允许人工强制', () => {
+  const fake = { id: 'FAKE', prereq: [['NOT_IN_DATA']], xor: [] };
+  const done = {};
+  const ev = Sim.evaluate(fake, done, simXor, {});
+  assert.strictEqual(ev.state, 'unknown');
+  assert.strictEqual(ev.canClick, true, '不能因为数据缺失就死锁');
+  assert.deepStrictEqual(ev.unknown, ['NOT_IN_DATA']);
+
+  const r = Sim.toggle(done, fake, simXor, {});
+  assert.strictEqual(r.ok, true);
+});
+
+test('再点一次取消', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  assert.strictEqual(Sim.count(done), 0);
+});
+
+test('清空把所有已点都清掉', () => {
+  const done = {};
+  Sim.toggle(done, byId('T_root'), simXor, null);
+  Sim.toggle(done, byId('T_left'), simXor, null);
+  Sim.reset(done);
+  assert.strictEqual(Sim.count(done), 0);
+});
+
 // ---------------- 真实游戏文件（可选） ----------------
 
 const HOI4_PATH = process.env.HOI4_PATH;
