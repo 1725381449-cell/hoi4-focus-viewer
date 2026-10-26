@@ -358,6 +358,89 @@ test('放大请求被忽略', () => {
   assert.strictEqual(out.width, 1);
 });
 
+// ---------------- 条件解读 ----------------
+
+console.log('\n条件翻译');
+
+const Triggers = require('../lib/triggers.js');
+
+function blockOfScript(text) {
+  return Clausewitz.parse(text).entries[0].v;
+}
+
+test('把常见条件翻成中文', () => {
+  const block = blockOfScript('a = { has_completed_focus = T_root date > 1940.1.1 has_global_flag = mc_started }');
+  const lines = Triggers.explain(block);
+  const texts = lines.map(l => l.text);
+
+  assert.ok(texts.some(t => t.indexOf('已完成国策「T_root」') !== -1), texts.join(' | '));
+  assert.ok(texts.some(t => t.indexOf('1940 年 1 月 1 日') !== -1), '日期没翻译');
+  assert.ok(texts.some(t => t.indexOf('全局标记「mc_started」') !== -1), '标记没翻译');
+});
+
+test('标记和国策引用被标出来，供界面追溯', () => {
+  const block = blockOfScript('a = { has_completed_focus = T_root has_global_flag = mc_started }');
+  const lines = Triggers.explain(block);
+  const focusRef = lines.filter(l => l.ref && l.ref.kind === 'focus')[0];
+  const flagRef = lines.filter(l => l.ref && l.ref.kind === 'global')[0];
+  assert.strictEqual(focusRef.ref.value, 'T_root');
+  assert.strictEqual(flagRef.ref.value, 'mc_started');
+});
+
+test('NOT / OR 递归并加深缩进', () => {
+  const block = blockOfScript('a = { NOT = { has_government = fascism } OR = { tag = GER tag = ITA } }');
+  const lines = Triggers.explain(block);
+
+  assert.strictEqual(lines[0].text, '不满足：');
+  assert.strictEqual(lines[0].depth, 0);
+  assert.strictEqual(lines[1].text, '政体是 fascism');
+  assert.strictEqual(lines[1].depth, 1);
+
+  const orLine = lines.filter(l => l.text === '满足任一项：')[0];
+  assert.ok(orLine, '没识别 OR');
+  assert.ok(lines.filter(l => l.depth === orLine.depth + 1).length >= 2, 'OR 子项没缩进');
+});
+
+test('不认识的键原样输出，不吞内容', () => {
+  const block = blockOfScript('a = { some_unknown_trigger = 42 }');
+  const lines = Triggers.explain(block);
+  assert.strictEqual(lines[0].text, 'some_unknown_trigger = 42');
+});
+
+test('humanDate 处理常见日期格式', () => {
+  assert.strictEqual(Triggers.humanDate('1939.1.1'), '1939 年 1 月 1 日');
+  assert.strictEqual(Triggers.humanDate('1940.12.31'), '1940 年 12 月 31 日');
+  assert.strictEqual(Triggers.humanDate('不是日期'), '不是日期');
+});
+
+console.log('\n标记索引');
+
+const Flags = require('../lib/flags.js');
+
+test('找到设置标记的事件 id', () => {
+  const ast = Clausewitz.parse(
+    'country_event = { id = mc.bootstrap title = t set_global_flag = mc_started }'
+  );
+  const idx = Flags.indexAst(ast, 'events/mc.txt');
+  const hits = Flags.lookup(idx, 'global', 'mc_started');
+  assert.strictEqual(hits.length, 1);
+  assert.strictEqual(hits[0].owner, 'mc.bootstrap');
+  assert.strictEqual(hits[0].file, 'events/mc.txt');
+});
+
+test('识别 set_variable 的变量名', () => {
+  const ast = Clausewitz.parse('country_event = { id = mc.calc set_variable = { var = mc_blocks value = 3 } }');
+  const idx = Flags.indexAst(ast, 'events/mc.txt');
+  const hits = Flags.lookup(idx, 'variable', 'mc_blocks');
+  assert.strictEqual(hits.length, 1);
+  assert.strictEqual(hits[0].owner, 'mc.calc');
+});
+
+test('没设置过的标记返回空数组', () => {
+  const idx = Flags.indexAst(Clausewitz.parse('a = { b = 1 }'), 'x.txt');
+  assert.deepStrictEqual(Flags.lookup(idx, 'global', 'nope'), []);
+});
+
 // ---------------- 真实游戏文件（可选） ----------------
 
 const HOI4_PATH = process.env.HOI4_PATH;

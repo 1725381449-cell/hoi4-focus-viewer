@@ -360,6 +360,28 @@ path[data-from].is-dim { opacity: .08; }
   text-decoration: line-through;
 }
 
+/* ---------- 条件解读 ---------- */
+
+.trig {
+  padding: 9px 11px;
+  background: #0b0f15;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.trig-line {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #c3cee2;
+}
+
+.trig-src {
+  font-size: 11px;
+  color: #6f7f9a;
+}
+
+.trig-src--none { color: #8a5a5a; }
+
 /* ---------- 全局搜索结果 ---------- */
 
 .search-results {

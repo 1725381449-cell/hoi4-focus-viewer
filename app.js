@@ -23,7 +23,9 @@
     iconCache: {},     // 精灵名 → data URL（或 null）
     iconStats: { total: 0, hit: 0 },
     globalIds: {},     // 国策 id → 所在树 id（跨树跳转用）
-    rel: null          // 当前树的关系解析结果
+    rel: null,         // 当前树的关系解析结果
+    flagIndex: {},     // 标记/变量 → 设置点
+    txtFiles: []       // 所有 .txt（后台建标记索引用）
   };
 
   var el = {
@@ -170,6 +172,39 @@
     }
   }
 
+  /**
+   * 后台扫事件和国策文件，建「标记 / 变量 → 设置点」索引。
+   * 条件里出现 has_global_flag = X 时，就能告诉用户 X 是谁设的。
+   * 扫不到不报错，界面上只是不显示来源。
+   */
+  function buildFlagIndex() {
+    var targets = state.txtFiles.filter(function (f) {
+      var p = f._relPath || '';
+      return p.indexOf('events/') !== -1 || p.indexOf('national_focus') !== -1;
+    }).slice(0, 1200);
+
+    if (!targets.length) return;
+
+    var index = {};
+    var i = 0;
+
+    function next() {
+      if (i >= targets.length) {
+        state.flagIndex = index;
+        return;
+      }
+      var file = targets[i++];
+      file.text().then(function (text) {
+        try {
+          Flags.indexAst(Clausewitz.parse(text), file._relPath || file.name, index);
+        } catch (e) { /* 坏文件跳过 */ }
+        next();
+      }, function () { next(); });
+    }
+
+    next();
+  }
+
   // ---------------- 图标 ----------------
 
   function rgbaToDataURL(img) {
@@ -289,9 +324,11 @@
       }
 
       state.globalIds = Clausewitz.globalIndex(state.trees);
+      state.txtFiles = rawFiles;
       el.empty.style.display = 'none';
       renderSidebar();
       selectTree(state.trees[0].id);
+      buildFlagIndex();
     }
 
     next();
@@ -559,6 +596,40 @@
       '</pre></section>';
   }
 
+  /** 把条件块翻成中文短句，并标出引用来源 */
+  function conditionSection(focus, key, label) {
+    var block = blockOf(focus, key);
+    if (!block) return '';
+
+    var lines = Triggers.explain(block);
+    if (!lines.length) return '';
+
+    var html = ['<section class="detail-sec"><h4>' + escape(label) + ' · 人话版</h4><div class="trig">'];
+
+    lines.forEach(function (line) {
+      var extra = '';
+
+      if (line.ref && line.ref.kind === 'focus') {
+        extra = ' ' + chip(line.ref.value);
+      } else if (line.ref) {
+        var hits = Flags.lookup(state.flagIndex, line.ref.kind, line.ref.value);
+        if (hits.length) {
+          extra = ' <span class="trig-src">← ' + hits.slice(0, 3).map(function (h) {
+            return escape((h.owner ? h.owner + ' ' : '') + h.file);
+          }).join('；') + '</span>';
+        } else if (Object.keys(state.flagIndex).length) {
+          extra = ' <span class="trig-src trig-src--none">← 未找到设置点</span>';
+        }
+      }
+
+      html.push('<div class="trig-line" style="padding-left:' + (line.depth * 14) + 'px">' +
+        escape(line.text) + extra + '</div>');
+    });
+
+    html.push('</div></section>');
+    return html.join('');
+  }
+
   function renderDetail(f) {
     var html = [];
 
@@ -597,9 +668,10 @@
       html.push('</div></section>');
     }
 
-    html.push(preBlock(f, 'available', '可用条件'));
+    html.push(conditionSection(f, 'available', '可用条件'));
+    html.push(conditionSection(f, 'bypass', '跳过条件'));
+    html.push(preBlock(f, 'available', '可用条件 · 原始脚本'));
     html.push(preBlock(f, 'completion_reward', '完成效果'));
-    html.push(preBlock(f, 'bypass', '跳过条件'));
 
     el.detail.innerHTML = html.join('');
     el.detail.classList.add('open');
