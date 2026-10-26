@@ -1150,9 +1150,14 @@
     state.searchHits = [];
     if (!state.current) return;
 
-    renderSearchResults(q);
+    // 一个字太容易误触，至少两个字符才开始过滤
+    if (q.length < 2) {
+      renderSearchResults('');
+      clearSelection();
+      return;
+    }
 
-    if (!q) { clearSelection(); return; }
+    renderSearchResults(q);
 
     var hits = Object.create(null);
     state.current.focuses.forEach(function (f) {
@@ -1240,9 +1245,20 @@
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
 
-  el.search.addEventListener('input', function () { runSearch(el.search.value); });
+  // 搜框加了防抖：随手敲错一个字不会立刻把整张图变暗
+  var searchTimer = null;
+
+  el.search.addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    var value = el.search.value;
+    searchTimer = setTimeout(function () { runSearch(value); }, 220);
+  });
+
   el.search.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') jumpToFirstHit();
+    if (e.key !== 'Enter') return;
+    clearTimeout(searchTimer);
+    runSearch(el.search.value);
+    jumpToFirstHit();
   });
 
   el.btnDecisions.addEventListener('click', openDecisions);
@@ -1295,22 +1311,35 @@
   var modalClose = document.getElementById('modal-close');
   if (modalClose) modalClose.addEventListener('click', closeModal);
 
+  /** 拖进来的是不是文件？拖文字、拖链接都不该触发载入提示 */
+  function hasFileDrop(e) {
+    var dt = e.dataTransfer;
+    if (!dt || !dt.types) return false;
+    for (var i = 0; i < dt.types.length; i++) {
+      if (dt.types[i] === 'Files') return true;
+    }
+    return false;
+  }
+
   ['dragenter', 'dragover'].forEach(function (type) {
     window.addEventListener(type, function (e) {
+      if (!hasFileDrop(e)) return;      // 拖的是几个字，别吓人
       e.preventDefault();
       document.body.classList.add('dragging');
     });
   });
 
   window.addEventListener('dragleave', function (e) {
-    e.preventDefault();
     if (e.relatedTarget) return;
     document.body.classList.remove('dragging');
   });
 
   window.addEventListener('drop', function (e) {
+    // 非文件一律吞掉：免得把随手拖的几个字丢进搜索框
     e.preventDefault();
     document.body.classList.remove('dragging');
+
+    if (!hasFileDrop(e)) return;
 
     var items = e.dataTransfer && e.dataTransfer.items;
     if (!items || !items.length) return;
