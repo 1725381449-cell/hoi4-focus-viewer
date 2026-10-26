@@ -1,0 +1,85 @@
+# 测试样例：覆盖查看器需要处理的语法情况
+# 注释、引号字符串、relative_position_id、互斥、多组前置、嵌套 if/limit
+
+focus_tree = {
+	id = test_tree
+
+	country = {
+		factor = 0
+		modifier = {
+			add = 10
+			tag = GER
+		}
+	}
+
+	default = no
+
+	focus = {
+		id = T_root
+		icon = GFX_goal_generic_political_pressure
+		x = 0
+		y = 0
+		cost = 10
+		prerequisite = { }
+		completion_reward = { add_political_power = 50 }
+	}
+
+	focus = {
+		id = T_left
+		icon = GFX_focus_generic_military
+		x = -1
+		y = 1
+		cost = 10
+		prerequisite = { focus = T_root }
+		mutually_exclusive = { focus = T_right }
+		available = {
+			has_government = fascism   # 行尾注释
+		}
+		completion_reward = {
+			if = {
+				limit = { has_idea = test_idea }
+				remove_ideas = test_idea
+			}
+		}
+	}
+
+	focus = {
+		id = T_right
+		icon = GFX_focus_generic_military
+		x = 1
+		y = 1
+		prerequisite = { focus = T_root }
+		mutually_exclusive = { focus = T_left }
+	}
+
+	focus = {
+		id = T_rel
+		icon = GFX_goal_generic_army
+		x = 2
+		y = 0
+		relative_position_id = T_root
+		prerequisite = {
+			focus = T_left
+			focus = T_right
+		}
+	}
+
+	focus = {
+		id = T_or
+		x = 0
+		y = 2
+		prerequisite = { focus = T_left }
+		prerequisite = { focus = T_right }
+	}
+}
+
+focus_tree = {
+	id = second_tree
+
+	focus = {
+		id = S_only
+		icon = GFX_goal_generic_small_arms
+		x = 0
+		y = 0
+	}
+}
