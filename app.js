@@ -1,21 +1,27 @@
 /*
  * 界面逻辑：读文件夹 → 解析 → 画图 → 交互
- * 依赖 lib/clausewitz.js 和 lib/render.js（以全局变量形式加载）
+ * 依赖 lib/clausewitz.js、lib/dds.js、lib/gfx.js、lib/render.js
  */
 (function () {
   'use strict';
 
-  // 整目录拖入时，这些文件夹里不可能有国策树，直接跳过
-  var SKIP_DIRS = /^(gfx|sound|music|portraits|assets|cef|browser|pdx_launcher|shadercache|crash_reporter|dlc|integrated_dlc|documentation|tutorial|wiki|tests|\.git|node_modules)$/i;
+  // 这些目录里不可能有国策树，直接跳过。
+  // gfx 单独处理：只保留 gfx/interface 下的内容（图标都在那儿）。
+  var SKIP_DIRS = /^(sound|music|portraits|assets|cef|browser|pdx_launcher|shadercache|crash_reporter|dlc|integrated_dlc|documentation|tutorial|wiki|tests|\.git|node_modules)$/i;
   var MAX_FILE_BYTES = 4 * 1024 * 1024;
   var MAX_DETAIL_LINES = 40;
+  var MAX_ICONS = 250;
 
   var state = {
     trees: [],
     current: null,
     view: { x: 0, y: 0, k: 1 },
     selected: null,
-    searchHits: []
+    searchHits: [],
+    spriteIndex: {},   // 精灵名 → 纹理路径
+    ddsFiles: {},      // 纹理路径 → File（惰性读取）
+    iconCache: {},     // 精灵名 → data URL（或 null）
+    iconStats: { total: 0, hit: 0 }
   };
 
   var el = {
@@ -46,23 +52,47 @@
     return null;
   }
 
+  /** 把 entry.fullPath / webkitRelativePath 转成相对被拖入文件夹的路径 */
+  function relativePath(p) {
+    var s = String(p || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    var i = s.indexOf('/');
+    return (i >= 0 ? s.slice(i + 1) : s).toLowerCase();
+  }
+
   // ---------------- 读文件 ----------------
 
+  var buckets = { txt: [], gfx: [], dds: [] };
+
   function collectFromEntries(entries) {
-    var files = [];
+    buckets = { txt: [], gfx: [], dds: [] };
 
     function walk(entry) {
       return new Promise(function (resolve) {
         if (entry.isFile) {
+          var name = entry.name.toLowerCase();
+          var ext = name.slice(name.lastIndexOf('.') + 1);
+          if (buckets[ext] === undefined) return resolve();
+
+          // 先按路径过滤，再取 File——否则 gfx 下上万个无关贴图会白白建一遍对象
+          var rel = relativePath(entry.fullPath);
+          if (ext === 'dds' && rel.indexOf('gfx/interface/') === -1) return resolve();
+
           entry.file(function (file) {
-            if (/\.txt$/i.test(file.name) && file.size < MAX_FILE_BYTES) {
-              try { file._relPath = entry.fullPath; } catch (e) { /* 忽略只读对象 */ }
-              files.push(file);
-            }
+            if (file.size >= MAX_FILE_BYTES) return resolve();
+            try { file._relPath = rel; } catch (e) { /* 忽略只读对象 */ }
+            buckets[ext].push(file);
             resolve();
           }, function () { resolve(); });
-        } else if (entry.isDirectory) {
+          return;
+        }
+
+        if (entry.isDirectory) {
           if (SKIP_DIRS.test(entry.name)) return resolve();
+
+          // gfx 底下只关心 interface（图标、界面贴图），其余全是模型和地图，不进去
+          var fp = String(entry.fullPath || '').replace(/\\/g, '/').toLowerCase();
+          if (/\/gfx\/[^/]+$/.test(fp) && !/\/gfx\/interface$/.test(fp)) return resolve();
+
           var reader = entry.createReader();
           var all = [];
           (function next() {
@@ -81,18 +111,22 @@
       });
     }
 
-    return Promise.all(entries.map(walk)).then(function () { return files; });
+    return Promise.all(entries.map(walk)).then(function () { return buckets; });
   }
 
   function collectFromFileList(fileList) {
-    var files = [];
+    var out = { txt: [], gfx: [], dds: [] };
     for (var i = 0; i < fileList.length; i++) {
       var f = fileList[i];
-      if (!/\.txt$/i.test(f.name) || f.size >= MAX_FILE_BYTES) continue;
-      try { f._relPath = f.webkitRelativePath || f.name; } catch (e) { /* 忽略 */ }
-      files.push(f);
+      var name = f.name.toLowerCase();
+      var ext = name.slice(name.lastIndexOf('.') + 1);
+      if (out[ext] === undefined || f.size >= MAX_FILE_BYTES) continue;
+      var rel = relativePath(f.webkitRelativePath || f.name);
+      if (ext === 'dds' && rel.indexOf('gfx/interface/') === -1) continue;
+      try { f._relPath = rel; } catch (e) { /* 忽略 */ }
+      out[ext].push(f);
     }
-    return Promise.resolve(files);
+    return Promise.resolve(out);
   }
 
   /**
@@ -102,20 +136,118 @@
   function pickPool(files) {
     var targeted = [];
     for (var i = 0; i < files.length; i++) {
-      var p = files[i]._relPath || files[i].webkitRelativePath || '';
-      if (/national_focus/i.test(p)) targeted.push(files[i]);
+      var p = files[i]._relPath || '';
+      if (p.indexOf('national_focus') !== -1) targeted.push(files[i]);
     }
     return targeted.length ? targeted : files;
   }
 
+  // ---------------- 精灵索引 ----------------
+
+  function buildSpriteIndex(gfxFiles) {
+    var index = {};
+    var queue = gfxFiles.slice(0);
+
+    function next() {
+      if (!queue.length) return Promise.resolve(index);
+      var file = queue.shift();
+      return file.text().then(function (text) {
+        try { index = GFX.parseGfx(text, index); } catch (e) { /* 坏文件跳过 */ }
+        return next();
+      }, function () { return next(); });
+    }
+
+    return next();
+  }
+
+  function indexDdsFiles(files) {
+    state.ddsFiles = {};
+    for (var i = 0; i < files.length; i++) {
+      state.ddsFiles[files[i]._relPath] = files[i];
+    }
+  }
+
+  // ---------------- 图标 ----------------
+
+  function rgbaToDataURL(img) {
+    var canvas = document.createElement('canvas');
+    canvas.width = img.width;
+    canvas.height = img.height;
+    var ctx = canvas.getContext('2d');
+    var data = ctx.createImageData(img.width, img.height);
+    data.data.set(img.rgba);
+    ctx.putImageData(data, 0, 0);
+    return canvas.toDataURL('image/png');
+  }
+
+  function loadIcon(name) {
+    if (!name) return Promise.resolve(null);
+    if (state.iconCache[name] !== undefined) return Promise.resolve(state.iconCache[name]);
+
+    var path = state.spriteIndex[name];
+    var file = path && state.ddsFiles[path];
+    if (!file) {
+      state.iconCache[name] = null;
+      return Promise.resolve(null);
+    }
+
+    return file.arrayBuffer().then(function (buf) {
+      var img = null;
+      try { img = DDS.decode(buf); } catch (e) { img = null; }
+      var url = img ? rgbaToDataURL(img) : null;
+      state.iconCache[name] = url;
+      return url;
+    }, function () {
+      state.iconCache[name] = null;
+      return null;
+    });
+  }
+
+  function prepareIcons(tree) {
+    var names = [];
+    var seen = {};
+    for (var i = 0; i < tree.focuses.length; i++) {
+      var n = tree.focuses[i].icon;
+      if (n && !seen[n]) { seen[n] = true; names.push(n); }
+    }
+
+    var icons = {};
+    if (!names.length) return Promise.resolve(icons);
+
+    var list = names.length > MAX_ICONS ? names.slice(0, MAX_ICONS) : names;
+    return Promise.all(list.map(function (n) {
+      return loadIcon(n).then(function (url) {
+        if (url) icons[n] = url;
+      });
+    })).then(function () {
+      state.iconStats = { total: list.length, hit: Object.keys(icons).length };
+      return icons;
+    });
+  }
+
   // ---------------- 解析 ----------------
 
-  function loadFiles(rawFiles) {
-    if (!rawFiles.length) {
+  function loadFiles(files) {
+    var txt = files.txt || [];
+    var gfx = files.gfx || [];
+    var dds = files.dds || [];
+
+    indexDdsFiles(dds);
+    state.iconCache = {};
+
+    if (!txt.length) {
       el.stats.textContent = '没有找到 .txt 文件';
       return;
     }
 
+    el.stats.textContent = '读取图标索引…';
+    buildSpriteIndex(gfx).then(function (index) {
+      state.spriteIndex = index;
+      parseFocusFiles(txt);
+    });
+  }
+
+  function parseFocusFiles(rawFiles) {
     var pool = pickPool(rawFiles);
     var scanned = 0;
     var matched = 0;
@@ -153,11 +285,7 @@
         return;
       }
 
-      var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
-      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策 · ' +
-        matched + '/' + pool.length + ' 个文件命中';
       el.empty.style.display = 'none';
-
       renderSidebar();
       selectTree(state.trees[0].id);
     }
@@ -191,13 +319,24 @@
     state.selected = null;
     state.searchHits = [];
     state.view = { x: 0, y: 0, k: 1 };
-
-    el.stage.innerHTML = FocusRender.toSVG(tree, { title: tree.id });
-    applyView();
-    bindNodes();
     renderSidebar();
     closeDetail();
     el.search.value = '';
+    el.stats.textContent = '准备图标…';
+
+    prepareIcons(tree).then(function (icons) {
+      if (state.current !== tree) return;
+
+      el.stage.innerHTML = FocusRender.toSVG(tree, { title: tree.id, icons: icons });
+      applyView();
+      bindNodes();
+
+      var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
+      var iconNote = state.iconStats.hit
+        ? ' · 图标 ' + state.iconStats.hit + '/' + state.iconStats.total
+        : '';
+      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策' + iconNote;
+    });
   }
 
   // ---------------- 视图 ----------------
@@ -239,7 +378,6 @@
     var out = Object.create(null);
     out[startId] = true;
 
-    // 向上：所有前置
     var stack = [startId];
     while (stack.length) {
       var cur = byId[stack.pop()];
@@ -251,7 +389,6 @@
       });
     }
 
-    // 向下：所有后继
     var reverse = Object.create(null);
     tree.focuses.forEach(function (f) {
       (f.prereq || []).forEach(function (group) {
@@ -343,6 +480,11 @@
     html.push('<span class="detail-id">' + escape(f.id) + '</span>');
     html.push('<button class="icon-btn" id="detail-close" title="关闭">×</button>');
     html.push('</div>');
+
+    var iconUrl = state.iconCache[f.icon];
+    if (iconUrl) {
+      html.push('<img class="detail-thumb" src="' + iconUrl + '" alt="">');
+    }
 
     html.push('<div class="detail-meta">');
     html.push('<span>成本 <b>' + (f.cost === null ? '—' : f.cost) + '</b></span>');
@@ -516,7 +658,6 @@
     if (e.key === 'Escape') { clearSelection(); closeDetail(); }
   });
 
-  // 拖拽整个文件夹
   ['dragenter', 'dragover'].forEach(function (type) {
     window.addEventListener(type, function (e) {
       e.preventDefault();

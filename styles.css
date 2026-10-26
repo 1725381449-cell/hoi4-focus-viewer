@@ -262,6 +262,17 @@ path[data-from].is-dim { opacity: .08; }
 }
 .detail-meta b { color: #c3cee2; font-weight: 600; }
 
+.detail-thumb {
+  display: block;
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  background: #0b0f15;
+  border: 1px solid var(--line);
+}
+
 .detail-icon {
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 11px;
