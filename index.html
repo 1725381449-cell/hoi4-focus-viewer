@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>焦点树查看器 · HOI4 Focus Viewer</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <strong>焦点树查看器</strong>
+    <span class="dim">HOI4 Focus Viewer</span>
+  </div>
+  <div class="stats" id="stats">未加载</div>
+  <div class="actions">
+    <input id="search" type="search" placeholder="搜索焦点 id…" autocomplete="off">
+    <button id="btn-reset" title="回到初始视角">重置视图</button>
+    <button id="btn-export" title="把当前树导出成 SVG">导出 SVG</button>
+  </div>
+</header>
+
+<main>
+  <aside id="sidebar">
+    <div class="pane-title">焦点树</div>
+    <ul id="tree-list"></ul>
+    <label class="pick">
+      <input type="file" id="file-input" webkitdirectory directory multiple hidden>
+      选择 mod 文件夹…
+    </label>
+    <div class="tips">
+      <p><b>滚轮</b> 缩放</p>
+      <p><b>拖动空白处</b> 平移</p>
+      <p><b>单击节点</b> 高亮整条链</p>
+      <p><b>Esc</b> 取消选中</p>
+    </div>
+  </aside>
+
+  <section id="canvas">
+    <div id="stage"></div>
+    <div id="empty">
+      <h2>把 mod 文件夹拖进来</h2>
+      <p>也可以点左下角的「选择 mod 文件夹」。</p>
+      <p class="dim">只在本机读取 <code>common/national_focus/*.txt</code>，不上传任何东西。</p>
+    </div>
+  </section>
+</main>
+
+<script src="lib/clausewitz.js"></script>
+<script src="lib/render.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

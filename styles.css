@@ -1,0 +1,214 @@
+:root {
+  --bg: #0d1117;
+  --panel: #151b24;
+  --line: #232c3a;
+  --text: #e8eefc;
+  --dim: #7c8aa5;
+  --accent: #c9a227;
+  --accent-2: #5b7fc7;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+body.dragging #canvas::after {
+  content: "松开即可载入";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--accent);
+  background: rgba(13, 17, 23, 0.78);
+  border: 2px dashed var(--accent);
+  z-index: 20;
+}
+
+/* ---------- 顶栏 ---------- */
+
+.topbar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand strong { letter-spacing: 1px; }
+.brand .dim { margin-left: 8px; font-size: 12px; }
+
+.dim { color: var(--dim); }
+
+.stats {
+  flex: 1;
+  color: var(--dim);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.actions { display: flex; gap: 8px; align-items: center; }
+
+input[type="search"] {
+  width: 200px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #0b0f15;
+  color: var(--text);
+  outline: none;
+}
+input[type="search"]:focus { border-color: var(--accent-2); }
+
+button {
+  padding: 7px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #1b2331;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+button:hover { border-color: var(--accent-2); }
+
+/* ---------- 布局 ---------- */
+
+main {
+  display: flex;
+  height: calc(100% - 52px);
+}
+
+#sidebar {
+  width: 260px;
+  flex: 0 0 260px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.pane-title {
+  padding: 12px 16px 8px;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+#tree-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.tree-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #c3cee2;
+  font-size: 13px;
+}
+.tree-item:hover { background: #1c2433; }
+.tree-item.active { background: #223049; color: #fff; }
+.tree-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tree-count {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+}
+
+.pick {
+  display: block;
+  margin: 10px;
+  padding: 10px;
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: #a9b8d0;
+  cursor: pointer;
+  font-size: 13px;
+}
+.pick:hover { border-color: var(--accent-2); color: #fff; }
+
+.tips {
+  padding: 0 16px 14px;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.7;
+}
+.tips p { margin: 0; }
+.tips b { color: #9fb0ca; font-weight: 600; }
+
+/* ---------- 画布 ---------- */
+
+#canvas {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  cursor: grab;
+  background:
+    radial-gradient(circle at 30% 20%, #182233 0%, #0d1117 60%);
+}
+#canvas.grabbing { cursor: grabbing; }
+
+#stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+#stage svg { display: block; }
+
+#empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+#empty h2 { margin: 0 0 10px; font-weight: 600; }
+#empty p { margin: 4px 0; color: var(--dim); }
+#empty code {
+  background: #1b2331;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #a9b8d0;
+}
+
+/* ---------- 节点高亮 ---------- */
+
+.ftv-node { transition: opacity .12s ease; }
+.ftv-node.is-dim { opacity: .13; }
+.ftv-node.is-related rect:first-of-type {
+  filter: drop-shadow(0 0 7px rgba(201, 162, 39, .85));
+  stroke: var(--accent);
+}
+path[data-from] { transition: opacity .12s ease; }
+path[data-from].is-dim { opacity: .08; }
