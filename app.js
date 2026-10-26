@@ -13,6 +13,7 @@
     /(^|\/)common$/,
     /(^|\/)national_focus$/,
     /(^|\/)events$/,
+    /(^|\/)decisions$/,
     /(^|\/)interface$/,
     /(^|\/)gfx$/,
     /(^|\/)goals$/,
@@ -35,7 +36,9 @@
   /** 这个文件值不值得建 File 对象 */
   function wantedFile(rel, ext) {
     if (ext === 'txt') {
-      return rel.indexOf('national_focus') !== -1 || /(^|\/)events\//.test(rel);
+      return rel.indexOf('national_focus') !== -1 ||
+        /(^|\/)events\//.test(rel) ||
+        /(^|\/)decisions\//.test(rel);
     }
     if (ext === 'gfx') return true;
     if (ext === 'dds') {
@@ -58,6 +61,7 @@
     rel: null,         // 当前树的关系解析结果
     flagIndex: {},     // 标记/变量 → 设置点
     events: {},        // 事件 id → 定义
+    decisions: {},     // 决议 id → 定义
     txtFiles: [],      // 所有 .txt（后台建索引）
     completed: {},     // 已点的国策 id
     xorMap: {}         // 双向互斥表
@@ -74,6 +78,7 @@
     btnReset: document.getElementById('btn-reset'),
     btnExport: document.getElementById('btn-export'),
     btnClearDone: document.getElementById('btn-clear-done'),
+    btnDecisions: document.getElementById('btn-decisions'),
     detail: document.getElementById('detail'),
     searchResults: document.getElementById('search-results')
   };
@@ -207,27 +212,31 @@
   }
 
   /**
-   * 后台扫事件和国策文件，一次建两种索引：
+   * 后台扫事件 / 决议 / 国策文件，一次建三种索引：
    *   标记 / 变量 → 设置点（回答「谁设的」）
    *   事件 id     → 定义（回答「触发的是什么事件」）
-   * 扫不到不报错，界面上只是不显示来源。
+   *   决议 id     → 定义（回答「这个决议干什么」）
    */
   function buildFlagIndex() {
     var targets = state.txtFiles.filter(function (f) {
       var p = f._relPath || '';
-      return /(^|\/)events\//.test(p) || p.indexOf('national_focus') !== -1;
-    }).slice(0, 1200);
+      return /(^|\/)events\//.test(p) ||
+        /(^|\/)decisions\//.test(p) ||
+        p.indexOf('national_focus') !== -1;
+    }).slice(0, 1400);
 
     if (!targets.length) return;
 
     var flags = {};
     var events = {};
+    var decisions = {};
     var i = 0;
 
     function next() {
       if (i >= targets.length) {
         state.flagIndex = flags;
         state.events = events;
+        state.decisions = decisions;
         return;
       }
       var file = targets[i++];
@@ -237,6 +246,7 @@
           var rel = file._relPath || file.name;
           Flags.indexAst(ast, rel, flags);
           Events.indexAst(ast, rel, events);
+          Decisions.indexAst(ast, rel, decisions);
         } catch (e) { /* 坏文件跳过 */ }
         next();
       }, function () { next(); });
@@ -472,14 +482,7 @@
     prepareIcons(tree).then(function (icons) {
       if (state.current !== tree) return;
 
-      el.stage.innerHTML = FocusRender.toSVG(tree, {
-        title: tree.id,
-        icons: icons,
-        crossIds: state.rel.cross
-      });
-      bindNodes();
-      applyView();
-      applyCompletion();
+      renderTree(icons);
 
       if (focusId && focusById(focusId)) {
         state.selected = focusId;
@@ -522,13 +525,7 @@
     prepareIcons(tree).then(function (icons) {
       if (state.current !== tree) return;
 
-      el.stage.innerHTML = FocusRender.toSVG(tree, {
-        title: tree.id,
-        icons: icons,
-        crossIds: state.rel ? state.rel.cross : null
-      });
-      bindNodes();
-      applyCompletion();
+      renderTree(icons);
 
       if (keep && focusById(keep)) {
         state.selected = keep;
@@ -547,8 +544,96 @@
       'translate(' + state.view.x + 'px, ' + state.view.y + 'px) scale(' + state.view.k + ')';
   }
 
+  function currentIcons() {
+    var icons = {};
+    if (!state.current) return icons;
+    state.current.focuses.forEach(function (f) {
+      var url = state.iconCache[f.icon];
+      if (url) icons[f.icon] = url;
+    });
+    return icons;
+  }
+
+  /**
+   * 把还活着的国策重新压紧网格。
+   * 隐藏掉一些分支后，原来的列/行坐标会留下大片空洞；
+   * 这里把「有节点的行/列」重新编号成 0,1,2…，空洞就没了。
+   */
+  function compactTree(tree, visible) {
+    var xs = [], ys = [];
+    var seenX = {}, seenY = {};
+
+    visible.forEach(function (f) {
+      if (!seenX[f.absX]) { seenX[f.absX] = 1; xs.push(f.absX); }
+      if (!seenY[f.absY]) { seenY[f.absY] = 1; ys.push(f.absY); }
+    });
+
+    xs.sort(function (a, b) { return a - b; });
+    ys.sort(function (a, b) { return a - b; });
+
+    var xi = {}, yi = {};
+    xs.forEach(function (v, i) { xi[v] = i; });
+    ys.forEach(function (v, i) { yi[v] = i; });
+
+    return {
+      id: tree.id,
+      focuses: visible.map(function (f) {
+        var copy = {};
+        for (var k in f) copy[k] = f[k];
+        copy.absX = xi[f.absX];
+        copy.absY = yi[f.absY];
+        return copy;
+      })
+    };
+  }
+
+  /** 重新画当前树：过滤掉死掉的国策、压紧坐标、套用已点状态 */
+  function renderTree(icons) {
+    var tree = state.current;
+    if (!tree) return;
+
+    var dead = Sim.unreachable(tree, state.completed, state.xorMap);
+    var visible = tree.focuses.filter(function (f) { return !dead[f.id]; });
+    var view = compactTree(tree, visible);
+
+    state.viewById = {};
+    view.focuses.forEach(function (f) { state.viewById[f.id] = f; });
+
+    el.stage.innerHTML = FocusRender.toSVG(view, {
+      title: tree.id,
+      icons: icons || currentIcons(),
+      crossIds: state.rel ? state.rel.cross : null
+    });
+
+    bindNodes();
+    applyCompletion();
+
+    if (state.selected && focusById(state.selected)) {
+      highlight(relatedIds(state.selected));
+    }
+
+    fitView();
+  }
+
+  /** 让整张图刚好铺满画布 */
+  function fitView() {
+    var svg = el.stage.querySelector('svg');
+    if (!svg) return;
+
+    var w = parseFloat(svg.getAttribute('width'));
+    var h = parseFloat(svg.getAttribute('height'));
+    var rect = el.canvas.getBoundingClientRect();
+    if (!w || !h || !rect.width || !rect.height) return;
+
+    var k = Math.min(rect.width / w, rect.height / h, 1) * 0.96;
+    state.view.k = k;
+    state.view.x = (rect.width - w * k) / 2;
+    state.view.y = (rect.height - h * k) / 2;
+    applyView();
+  }
+
   function centerOn(id) {
-    var f = focusById(id);
+    var f = state.viewById && state.viewById[id];
     if (!f || typeof f._sx !== 'number') return;
     var rect = el.canvas.getBoundingClientRect();
     var k = state.view.k;
@@ -573,7 +658,7 @@
         var f = focusById(this.dataset.focusId);
         if (!f) return;
         if (!Sim.toggle(state.completed, f, state.xorMap, state.globalIds).ok) return;
-        applyCompletion();
+        renderTree();
         showDetail(f.id);
         updateStats();
       });
@@ -653,16 +738,12 @@
     }
   }
 
-  /** 按「已点 + 前置 + 互斥」重新打状态，只改 class，不重画 SVG */
+  /** 按「已点 + 前置 + 互斥」打状态；死了的已经在渲染时被过滤掉了 */
   function applyCompletion() {
     if (!state.current) return;
 
-    // 永远点不了的（被互斥挡掉，或所有前置都已死）直接隐藏，图会干净很多
-    var dead = Sim.unreachable(state.current, state.completed, state.xorMap);
     var nodes = el.stage.querySelectorAll('.ftv-node');
-    var i;
-
-    for (i = 0; i < nodes.length; i++) {
+    for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i];
       var f = focusById(node.dataset.focusId);
       if (!f) continue;
@@ -672,15 +753,6 @@
       node.classList.toggle('is-avail', st === 'avail');
       node.classList.toggle('is-locked', st === 'locked');
       node.classList.toggle('is-unknown', st === 'unknown');
-      node.classList.toggle('is-hidden', !!dead[f.id]);
-    }
-
-    // 连到隐藏节点的线也一起藏，否则会留一堆悬空的线头
-    var paths = el.stage.querySelectorAll('path[data-from]');
-    for (i = 0; i < paths.length; i++) {
-      var from = paths[i].getAttribute('data-from');
-      var to = paths[i].getAttribute('data-to');
-      paths[i].classList.toggle('is-hidden', !!dead[from] || !!dead[to]);
     }
   }
 
@@ -858,7 +930,7 @@
       doneBtn.addEventListener('click', function () {
         var result = Sim.toggle(state.completed, f, state.xorMap, state.globalIds);
         if (!result.ok) return;
-        applyCompletion();
+        renderTree();
         renderDetail(f);
         updateStats();
       });
@@ -934,6 +1006,87 @@
         }
       });
     }
+
+    showModal(id, html.join(''));
+  }
+
+  // ---------------- 决议 ----------------
+
+  function openDecisions() {
+    var all = state.decisions || {};
+    var ids = Object.keys(all).sort();
+
+    if (!ids.length) {
+      showModal('决议', '<p class="dim">还没有读到决议。需要拖入包含 ' +
+        '<code>common/decisions</code> 的游戏目录；索引在后台建，稍等几秒再点。</p>');
+      return;
+    }
+
+    showModal('决议', '<input id="dec-search" class="dec-search" type="search" ' +
+      'placeholder="搜索决议 id…（共 ' + ids.length + ' 个）" autocomplete="off">' +
+      '<div id="dec-list" class="dec-list"></div>');
+
+    var input = document.getElementById('dec-search');
+    var list = document.getElementById('dec-list');
+
+    function render(q) {
+      q = (q || '').trim().toLowerCase();
+      var out = [];
+      var shown = 0;
+
+      for (var i = 0; i < ids.length && shown < 120; i++) {
+        if (q && ids[i].toLowerCase().indexOf(q) === -1) continue;
+        var d = all[ids[i]];
+        out.push('<button class="dec-item" data-decision="' + escape(ids[i]) + '">' +
+          '<span class="dec-cat">' + escape(d.category) + '</span>' +
+          '<span class="dec-id">' + escape(ids[i]) + '</span></button>');
+        shown++;
+      }
+
+      list.innerHTML = out.length
+        ? out.join('')
+        : '<p class="dim" style="padding:10px">没有匹配的决议</p>';
+    }
+
+    input.addEventListener('input', function () { render(input.value); });
+    render('');
+    input.focus();
+  }
+
+  function openDecision(id) {
+    var d = state.decisions[id];
+
+    if (!d) {
+      showModal(id, '<p class="dim">没找到这个决议。</p>');
+      return;
+    }
+
+    var b = d.block;
+    var html = [];
+
+    html.push('<div class="ev-meta">decision · ' + escape(d.category) + ' · ' + escape(d.file) + '</div>');
+    html.push('<div class="ev-loc"><b>id</b> ' + escape(id) + '</div>');
+
+    var cost = Clausewitz._atom(b, 'cost');
+    if (cost) html.push('<div class="ev-loc"><b>花费</b> ' + escape(cost) + '</div>');
+
+    var icon = Clausewitz._atom(b, 'icon');
+    if (icon) html.push('<div class="ev-loc"><b>图标</b> ' + escape(icon) + '</div>');
+
+    var visible = Clausewitz._children(b, 'visible')[0];
+    if (visible) html.push(renderExplained(Triggers.explain(visible), '可见条件 · 人话版'));
+
+    var allowed = Clausewitz._children(b, 'allowed')[0];
+    if (allowed) html.push(renderExplained(Triggers.explain(allowed), '允许条件 · 人话版'));
+
+    var available = Clausewitz._children(b, 'available')[0];
+    if (available) html.push(renderExplained(Triggers.explain(available), '可用条件 · 人话版'));
+
+    var effect = Clausewitz._children(b, 'complete_effect')[0];
+    if (effect) html.push(renderExplained(Triggers.explainEffects(effect), '执行效果 · 人话版'));
+
+    var remove = Clausewitz._children(b, 'remove_effect')[0];
+    if (remove) html.push(renderExplained(Triggers.explainEffects(remove), '移除效果 · 人话版'));
 
     showModal(id, html.join(''));
   }
@@ -1092,9 +1245,11 @@
     if (e.key === 'Enter') jumpToFirstHit();
   });
 
+  el.btnDecisions.addEventListener('click', openDecisions);
+
   el.btnClearDone.addEventListener('click', function () {
     Sim.reset(state.completed);
-    applyCompletion();
+    renderTree();
     if (state.selected) showDetail(state.selected);
     updateStats();
   });
@@ -1117,12 +1272,19 @@
     if (e.key === 'Escape') { closeModal(); clearSelection(); closeDetail(); }
   });
 
-  // 事件芯片：详情面板和弹层里都可能出现，统一在 document 上代理
+  // 事件 / 决议芯片：详情面板和弹层里都可能出现，统一在 document 上代理
   document.addEventListener('click', function (e) {
-    var target = e.target.closest && e.target.closest('[data-event]');
-    if (target) {
+    var eventChip = e.target.closest && e.target.closest('[data-event]');
+    if (eventChip) {
       e.preventDefault();
-      openEvent(target.getAttribute('data-event'));
+      openEvent(eventChip.getAttribute('data-event'));
+      return;
+    }
+
+    var decItem = e.target.closest && e.target.closest('[data-decision]');
+    if (decItem) {
+      e.preventDefault();
+      openDecision(decItem.getAttribute('data-decision'));
       return;
     }
 

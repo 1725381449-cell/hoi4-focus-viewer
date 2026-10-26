@@ -648,6 +648,32 @@ test('没有前置的国策永远活着', () => {
   assert.ok(!dead['T_root'], '根不该死');
 });
 
+console.log('\n决议索引');
+
+const Decisions = require('../lib/decisions.js');
+
+test('按特征识别决议并记下所在分类', () => {
+  const ast = Clausewitz.parse(
+    'my_category = { my_decision = { cost = 100 available = { tag = GER } complete_effect = { add_stability = 0.1 } } }'
+  );
+  const idx = Decisions.indexAst(ast, 'common/decisions/x.txt');
+  assert.ok(idx['my_decision'], '没识别出决议');
+  assert.strictEqual(idx['my_decision'].category, 'my_category');
+  assert.strictEqual(idx['my_decision'].file, 'common/decisions/x.txt');
+});
+
+test('没有 cost / available 之类的块不算决议', () => {
+  const ast = Clausewitz.parse('my_category = { not_a_decision = { foo = 1 } }');
+  const idx = Decisions.indexAst(ast, 'x.txt');
+  assert.deepStrictEqual(Object.keys(idx), []);
+});
+
+test('多层嵌套也能找到', () => {
+  const ast = Clausewitz.parse('outer = { inner = { deep = { cost = 5 complete_effect = { add_manpower = 10 } } } }');
+  const idx = Decisions.indexAst(ast, 'x.txt');
+  assert.ok(idx['deep'], '嵌套里的决议没找到');
+});
+
 // ---------------- 真实游戏文件（可选） ----------------
 
 const HOI4_PATH = process.env.HOI4_PATH;

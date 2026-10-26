@@ -571,3 +571,44 @@ path.is-hidden { display: none; }
 }
 .chip--event:hover { border-color: #4e8cb8; color: #fff; background: #1d3242; }
 
+/* ---------- 决议浏览器 ---------- */
+
+.dec-search {
+  width: 100%;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #0b0f15;
+  color: var(--text);
+  outline: none;
+}
+.dec-search:focus { border-color: var(--accent-2); }
+
+.dec-list {
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.dec-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+.dec-item:hover { background: #223049; }
+
+.dec-cat { font-size: 11px; color: #8b9ab5; }
+.dec-id {
+  font-size: 12.5px;
+  color: #cfe0ff;
+  font-family: Consolas, "Cascadia Mono", monospace;
+}
+
