@@ -1,17 +1,17 @@
-# 焦点树查看器 · HOI4 Focus Viewer
+# 国策树查看器 · HOI4 Focus Viewer
 
-把《钢铁雄心 4》mod 里的 `common/national_focus/*.txt` 拖进浏览器，直接看结构图。
+拖入 mod 文件夹，直接看《钢铁雄心 4》国策树结构图。
 
-不装东西、不注册、不上传——双击 `index.html` 就能用。
+不装东西、不注册、不上传——双击 `index.html` 就能用，只在本机读 `common/national_focus/*.txt`。
 
-![焦点树预览](docs/preview.svg)
+![国策树预览](docs/preview.svg)
 
 ---
 
 ## 为什么做这个
 
 这个需求九年前就被验证过：[FocusTreeAndEventManager](https://github.com/Minivera/FocusTreeAndEventManager)
-（38 star / 32 fork）能管理和可视化焦点树。但它是个 Windows 桌面 C# 程序，
+（38 star / 32 fork）能管理和可视化国策树。但它是个 Windows 桌面 C# 程序，
 **2018 年归档**，面对的是七八年前的游戏版本。
 
 后来这个位置被网页端的 [钢之工坊](https://scharnhorst.hagane.works/) 接住了，
@@ -43,7 +43,7 @@
 ## 它做的事
 
 - **解析 Clausewitz 脚本**：注释、引号字符串、嵌套块、BOM、裸露的列表值
-- **换算坐标**：带 `relative_position_id` 的焦点，把相对偏移解成绝对坐标
+- **换算坐标**：带 `relative_position_id` 的国策，把相对偏移解成绝对坐标
 - **按 x / y 直接画**：HOI4 的坐标本来就是作者手写的，换算一下就是最终位置
 - **区分边**：实线 = 前置，虚线 = 多组前置（满足其一），红色虚线 = 互斥
 
@@ -61,7 +61,7 @@
 ```bash
 node test/clausewitz.test.js
 
-# 顺带用真实游戏文件跑一遍（81 个文件、1 万多个焦点）
+# 顺带用真实游戏文件跑一遍（81 个文件、1 万多个国策）
 HOI4_PATH="C:/Program Files (x86)/Steam/steamapps/common/Hearts of Iron IV" \
   node test/clausewitz.test.js
 ```
@@ -75,7 +75,7 @@ node tools/export-svg.js <文件或目录> --list          # 看看有哪些树
 node tools/export-svg.js <文件> --tree <树 id> --out out.svg
 ```
 
-`docs/preview.svg` 就是这么生成的：`generic.txt` 里的 `generic_focus`，56 个焦点。
+`docs/preview.svg` 就是这么生成的：`generic.txt` 里的 `generic_focus`，56 个国策。
 
 ## 已知限制
 

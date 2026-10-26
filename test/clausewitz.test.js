@@ -60,7 +60,7 @@ test('裸值（没有等号）不报错', () => {
   assert.strictEqual(block.entries[0].k, null);
 });
 
-console.log('\n抽取焦点树');
+console.log('\n抽取国策树');
 
 const trees = Clausewitz.extract(Clausewitz.parse(fixture('sample_focus.txt')));
 
@@ -69,7 +69,7 @@ test('抽到两棵树', () => {
   assert.deepStrictEqual(trees.map(t => t.id), ['test_tree', 'second_tree']);
 });
 
-test('第一棵树有 5 个焦点', () => {
+test('第一棵树有 5 个国策', () => {
   assert.strictEqual(trees[0].focuses.length, 5);
 });
 
@@ -99,7 +99,7 @@ test('mutually_exclusive 解析为 xor', () => {
   assert.deepStrictEqual(left.xor, ['T_right']);
 });
 
-test('第二个树只有一个焦点', () => {
+test('第二个树只有一个国策', () => {
   assert.strictEqual(trees[1].focuses.length, 1);
   assert.strictEqual(trees[1].focuses[0].id, 'S_only');
 });
@@ -157,11 +157,11 @@ if (HOI4_PATH) {
       assert.ok(allTrees.length > 0);
     });
 
-    test('焦点总数 > 8000（v1.19 实际 10337）', () => {
+    test('国策总数 > 8000（v1.19 实际 10337）', () => {
       assert.ok(focusCount > 8000, '只解析出 ' + focusCount + ' 个');
     });
 
-    test('每个焦点都有坐标', () => {
+    test('每个国策都有坐标', () => {
       for (const t of allTrees) {
         for (const f of t.focuses) {
           assert.ok(Number.isFinite(f.absX) && Number.isFinite(f.absY), f.id + ' 坐标无效');
@@ -175,7 +175,7 @@ if (HOI4_PATH) {
       assert.ok(svg.length > 1000);
     });
 
-    console.log('    文件 ' + files.length + ' 个，焦点 ' + focusCount + ' 个，耗时 ' + elapsed + ' ms');
+    console.log('    文件 ' + files.length + ' 个，国策 ' + focusCount + ' 个，耗时 ' + elapsed + ' ms');
   }
 }
 

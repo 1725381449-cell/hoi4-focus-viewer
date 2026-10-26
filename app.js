@@ -113,12 +113,12 @@
         .sort(function (a, b) { return b.focuses.length - a.focuses.length; });
 
       if (!state.trees.length) {
-        el.stats.textContent = '读到 ' + matched + ' 个文件，但里面没有焦点树';
+        el.stats.textContent = '读到 ' + matched + ' 个文件，但里面没有国策树';
         return;
       }
 
       var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
-      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个焦点 · ' + matched + ' 个文件';
+      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策 · ' + matched + ' 个文件';
       el.empty.style.display = 'none';
 
       renderSidebar();

@@ -1,5 +1,5 @@
 /*
- * 把一个焦点树文件导出成 SVG（用来生成 README 里的预览图）
+ * 把一个国策树文件导出成 SVG（用来生成 README 里的预览图）
  *
  * 用法：
  *   node tools/export-svg.js <文件或目录> [--list] [--tree <id>] [--out <路径>]
@@ -56,7 +56,7 @@ function main() {
   }
 
   if (!trees.length) {
-    console.error('没有找到焦点树：' + args.input);
+    console.error('没有找到国策树：' + args.input);
     process.exit(1);
   }
 
@@ -87,7 +87,7 @@ function main() {
   const width = svg.match(/width="(\d+)"/)[1];
   const height = svg.match(/height="(\d+)"/)[1];
 
-  console.log('导出 ' + picked.id + '（' + picked.focuses.length + ' 个焦点）');
+  console.log('导出 ' + picked.id + '（' + picked.focuses.length + ' 个国策）');
   console.log('  → ' + args.out);
   console.log('  SIZE ' + width + 'x' + height);
 }
