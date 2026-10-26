@@ -1,0 +1,15 @@
+# 临时文件
+docs/_shot.html
+docs/_raw.png
+docs/_tmp.svg
+
+# 依赖（本项目不需要，但别误提交）
+node_modules/
+
+# 日志
+*.log
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
