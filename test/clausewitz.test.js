@@ -237,6 +237,112 @@ test('空树不崩', () => {
   assert.ok(svg.includes('<svg'));
 });
 
+// ---------------- 图标链路 ----------------
+
+console.log('\nDDS 解码');
+
+const DDS = require('../lib/dds.js');
+
+/** 造一个最小的未压缩 32 位 DDS（A8R8G8B8） */
+function makeDDS(width, height, pixels) {
+  const buf = Buffer.alloc(128 + width * height * 4);
+  buf.write('DDS ', 0, 'latin1');
+  buf.writeUInt32LE(124, 4);
+  buf.writeUInt32LE(height, 12);
+  buf.writeUInt32LE(width, 16);
+  buf.writeUInt32LE(32, 76);
+  buf.writeUInt32LE(0x41, 80);
+  buf.writeUInt32LE(0, 84);          // fourCC 为空 = 未压缩
+  buf.writeUInt32LE(32, 88);
+  buf.writeUInt32LE(0x00ff0000, 92); // R
+  buf.writeUInt32LE(0x0000ff00, 96); // G
+  buf.writeUInt32LE(0x000000ff, 100); // B
+  buf.writeUInt32LE(0xff000000, 104); // A
+  pixels.forEach((p, i) => {
+    const o = 128 + i * 4;
+    buf.writeUInt8(p[2], o);       // 文件里是 B G R A
+    buf.writeUInt8(p[1], o + 1);
+    buf.writeUInt8(p[0], o + 2);
+    buf.writeUInt8(p[3], o + 3);
+  });
+  return buf;
+}
+
+test('解码未压缩 32 位 BGRA，通道顺序正确', () => {
+  const buf = makeDDS(2, 1, [[255, 0, 0, 255], [0, 128, 255, 64]]);
+  const img = DDS.decode(buf);
+  assert.ok(img);
+  assert.strictEqual(img.width, 2);
+  assert.strictEqual(img.height, 1);
+  assert.deepStrictEqual(Array.from(img.rgba.slice(0, 4)), [255, 0, 0, 255]);
+  assert.deepStrictEqual(Array.from(img.rgba.slice(4, 8)), [0, 128, 255, 64]);
+});
+
+test('非 DDS 输入返回 null，不抛异常', () => {
+  assert.strictEqual(DDS.decode(Buffer.from('not a dds file')), null);
+  assert.strictEqual(DDS.decode(Buffer.alloc(10)), null);
+});
+
+test('DX10 和不支持的位深返回 null', () => {
+  const dx10 = makeDDS(1, 1, [[1, 2, 3, 4]]);
+  dx10.write('DX10', 84, 'latin1');
+  assert.strictEqual(DDS.decode(dx10), null);
+
+  const b16 = makeDDS(1, 1, [[1, 2, 3, 4]]);
+  b16.writeUInt32LE(16, 88);
+  assert.strictEqual(DDS.decode(b16), null);
+});
+
+console.log('\nGFX 索引');
+
+const GFX = require('../lib/gfx.js');
+
+test('从 spriteType 里抽出 精灵名 → 纹理路径', () => {
+  const idx = GFX.parseGfx(
+    'spriteTypes = { spriteType = { name = "GFX_a" texturefile = "gfx/interface/goals/a.dds" }' +
+    ' spriteType = { name = "GFX_b" texturefile = "GFX/interface/goals/B.dds" } }'
+  );
+  assert.strictEqual(idx['GFX_a'], 'gfx/interface/goals/a.dds');
+  assert.strictEqual(idx['GFX_b'], 'gfx/interface/goals/b.dds', '路径应统一成小写');
+});
+
+test('没有 texturefile 的块被忽略', () => {
+  const idx = GFX.parseGfx('spriteTypes = { spriteType = { name = "GFX_c" } }');
+  assert.strictEqual(idx['GFX_c'], undefined);
+});
+
+console.log('\nPNG 编码');
+
+const PNG = require('../lib/png.js');
+const zlib = require('zlib');
+
+test('输出合法的 PNG 头尾', () => {
+  const png = Buffer.from(PNG.encode(new Uint8ClampedArray([255, 0, 0, 255]), 1, 1, zlib.deflateSync));
+  assert.deepStrictEqual(Array.from(png.slice(0, 8)), [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.strictEqual(png.toString('latin1', 12, 16), 'IHDR');
+  assert.strictEqual(png.readUInt32BE(16), 1, '宽应为 1');
+  assert.strictEqual(png.readUInt32BE(20), 1, '高应为 1');
+  assert.strictEqual(png.toString('latin1', png.length - 8, png.length - 4), 'IEND');
+});
+
+test('缩放按面积平均，尺寸正确', () => {
+  // 4x4 全红，缩到 2x2
+  const src = new Uint8ClampedArray(4 * 4 * 4);
+  for (let i = 0; i < 16; i++) {
+    src[i * 4] = 200; src[i * 4 + 1] = 100; src[i * 4 + 2] = 50; src[i * 4 + 3] = 255;
+  }
+  const small = PNG.resize(src, 4, 4, 2);
+  assert.strictEqual(small.width, 2);
+  assert.strictEqual(small.height, 2);
+  assert.deepStrictEqual(Array.from(small.rgba.slice(0, 4)), [200, 100, 50, 255]);
+});
+
+test('放大请求被忽略', () => {
+  const src = new Uint8ClampedArray(4);
+  const out = PNG.resize(src, 1, 1, 64);
+  assert.strictEqual(out.width, 1);
+});
+
 // ---------------- 真实游戏文件（可选） ----------------
 
 const HOI4_PATH = process.env.HOI4_PATH;
