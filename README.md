@@ -51,7 +51,8 @@
 - **详情面板**：成本、坐标、前置分组、互斥项，以及 `available` / `completion_reward` / `bypass` 的原始脚本
 - **条件解读**：把 `available` / `bypass` 翻成中文短句，并追溯标记是在哪个事件里设置的
 - **显示真图标**：读 `interface/*.gfx` 建精灵索引，再把 `.dds` 解成 PNG 贴进图里；解不了就退回色块
-- **优先读 `national_focus`**：拖整个游戏目录进来时，先把几千个无关 `.txt` 挡掉
+- **只进必要的目录**：拖整个游戏目录时只走 `common/national_focus`、`events`、`interface`、`gfx/interface/goals`、`gfx/interface/ideas` 这几处。实测原版有 4,885 个 `.txt`、33,007 个 `.dds`，真正用得上的只有 209 个和 6,358 个
+- **首屏不等图标**：先画树，`.gfx` 索引在后台建，建好再把图标补上
 
 ## 跨树关联
 

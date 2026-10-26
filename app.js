@@ -5,12 +5,44 @@
 (function () {
   'use strict';
 
-  // 这些目录里不可能有国策树，直接跳过。
-  // gfx 单独处理：只保留 gfx/interface 下的内容（图标都在那儿）。
-  var SKIP_DIRS = /^(sound|music|portraits|assets|cef|browser|pdx_launcher|shadercache|crash_reporter|dlc|integrated_dlc|documentation|tutorial|wiki|tests|\.git|node_modules)$/i;
+  // 只在这几个目录里找东西，其余一概不进。
+  // 原版游戏根目录下有 4885 个 .txt / 33007 个 .dds，
+  // 真正用得上的只有 209 个 txt 和 3158 个 dds，
+  // 全走一遍纯属浪费——实测拖动一次要多等好几秒。
+  var DIR_ALLOW = [
+    /(^|\/)common$/,
+    /(^|\/)national_focus$/,
+    /(^|\/)events$/,
+    /(^|\/)interface$/,
+    /(^|\/)gfx$/,
+    /(^|\/)goals$/,
+    /(^|\/)ideas$/
+  ];
+
   var MAX_FILE_BYTES = 4 * 1024 * 1024;
   var MAX_DETAIL_LINES = 40;
   var MAX_ICONS = 250;
+
+  /** 这个目录值不值得进去 */
+  function wantedDir(rel) {
+    if (rel === '') return true;                 // 刚拖进来的根
+    for (var i = 0; i < DIR_ALLOW.length; i++) {
+      if (DIR_ALLOW[i].test(rel)) return true;
+    }
+    return false;
+  }
+
+  /** 这个文件值不值得建 File 对象 */
+  function wantedFile(rel, ext) {
+    if (ext === 'txt') {
+      return rel.indexOf('national_focus') !== -1 || /(^|\/)events\//.test(rel);
+    }
+    if (ext === 'gfx') return true;
+    if (ext === 'dds') {
+      return rel.indexOf('gfx/interface/goals/') !== -1 || rel.indexOf('gfx/interface/ideas/') !== -1;
+    }
+    return false;
+  }
 
   var state = {
     trees: [],
@@ -71,16 +103,14 @@
   function collectFromEntries(entries) {
     buckets = { txt: [], gfx: [], dds: [] };
 
-    function walk(entry) {
+    // rel 是「相对被拖入文件夹」的路径，顺手也算好了，不用再从 fullPath 里剥
+    function walk(entry, rel) {
       return new Promise(function (resolve) {
         if (entry.isFile) {
           var name = entry.name.toLowerCase();
           var ext = name.slice(name.lastIndexOf('.') + 1);
           if (buckets[ext] === undefined) return resolve();
-
-          // 先按路径过滤，再取 File——否则 gfx 下上万个无关贴图会白白建一遍对象
-          var rel = relativePath(entry.fullPath);
-          if (ext === 'dds' && rel.indexOf('gfx/interface/') === -1) return resolve();
+          if (!wantedFile(rel, ext)) return resolve();
 
           entry.file(function (file) {
             if (file.size >= MAX_FILE_BYTES) return resolve();
@@ -92,18 +122,17 @@
         }
 
         if (entry.isDirectory) {
-          if (SKIP_DIRS.test(entry.name)) return resolve();
-
-          // gfx 底下只关心 interface（图标、界面贴图），其余全是模型和地图，不进去
-          var fp = String(entry.fullPath || '').replace(/\\/g, '/').toLowerCase();
-          if (/\/gfx\/[^/]+$/.test(fp) && !/\/gfx\/interface$/.test(fp)) return resolve();
+          if (!wantedDir(rel)) return resolve();
 
           var reader = entry.createReader();
           var all = [];
           (function next() {
             reader.readEntries(function (batch) {
               if (!batch.length) {
-                Promise.all(all.map(walk)).then(function () { resolve(); });
+                Promise.all(all.map(function (child) {
+                  var childRel = rel ? rel + '/' + child.name.toLowerCase() : child.name.toLowerCase();
+                  return walk(child, childRel);
+                })).then(function () { resolve(); });
                 return;
               }
               all = all.concat(Array.prototype.slice.call(batch));
@@ -116,7 +145,8 @@
       });
     }
 
-    return Promise.all(entries.map(walk)).then(function () { return buckets; });
+    return Promise.all(entries.map(function (e) { return walk(e, ''); }))
+      .then(function () { return buckets; });
   }
 
   function collectFromFileList(fileList) {
@@ -127,7 +157,7 @@
       var ext = name.slice(name.lastIndexOf('.') + 1);
       if (out[ext] === undefined || f.size >= MAX_FILE_BYTES) continue;
       var rel = relativePath(f.webkitRelativePath || f.name);
-      if (ext === 'dds' && rel.indexOf('gfx/interface/') === -1) continue;
+      if (!wantedFile(rel, ext)) continue;
       try { f._relPath = rel; } catch (e) { /* 忽略 */ }
       out[ext].push(f);
     }
@@ -272,17 +302,24 @@
 
     indexDdsFiles(dds);
     state.iconCache = {};
+    state.spriteIndex = {};
 
     if (!txt.length) {
       el.stats.textContent = '没有找到 .txt 文件';
       return;
     }
 
-    el.stats.textContent = '读取图标索引…';
-    buildSpriteIndex(gfx).then(function (index) {
-      state.spriteIndex = index;
-      parseFocusFiles(txt);
-    });
+    // 先把树画出来。图标索引要读 145 个 .gfx，等它会让首屏慢好几秒，
+    // 所以放到后台，建好了再把图标补上。
+    parseFocusFiles(txt);
+
+    if (gfx.length) {
+      buildSpriteIndex(gfx).then(function (index) {
+        state.spriteIndex = index;
+        state.iconCache = {};
+        refreshIcons();
+      });
+    }
   }
 
   function parseFocusFiles(rawFiles) {
@@ -439,13 +476,51 @@
         centerOn(focusId);
       }
 
-      var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
-      var iconNote = state.iconStats.hit
-        ? ' · 图标 ' + state.iconStats.hit + '/' + state.iconStats.total
-        : '';
+      updateStats();
+    });
+  }
+
+  function updateStats() {
+    if (!state.trees.length) return;
+
+    var total = state.trees.reduce(function (n, t) { return n + t.focuses.length; }, 0);
+    var parts = [state.trees.length + ' 棵树', total + ' 个国策'];
+
+    if (state.iconStats.hit) {
+      parts.push('图标 ' + state.iconStats.hit + '/' + state.iconStats.total);
+    }
+    if (state.rel) {
       var crossCount = Object.keys(state.rel.cross).length;
-      var crossNote = crossCount ? ' · 跨树关联 ' + crossCount : '';
-      el.stats.textContent = state.trees.length + ' 棵树 · ' + total + ' 个国策' + iconNote + crossNote;
+      if (crossCount) parts.push('跨树关联 ' + crossCount);
+    }
+
+    el.stats.textContent = parts.join(' · ');
+  }
+
+  /** 图标索引建好之后，把当前树重画一遍（不动视角和选中状态） */
+  function refreshIcons() {
+    if (!state.current) return;
+
+    var tree = state.current;
+    var keep = state.selected;
+
+    prepareIcons(tree).then(function (icons) {
+      if (state.current !== tree) return;
+
+      el.stage.innerHTML = FocusRender.toSVG(tree, {
+        title: tree.id,
+        icons: icons,
+        crossIds: state.rel ? state.rel.cross : null
+      });
+      bindNodes();
+
+      if (keep && focusById(keep)) {
+        state.selected = keep;
+        highlight(relatedIds(keep));
+        showDetail(keep);
+      }
+
+      updateStats();
     });
   }
 
